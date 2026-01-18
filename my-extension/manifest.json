@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Negotiating Agent",
+  "version": "1.0",
+  "description": "AI-powered negotiation assistant for Facebook Marketplace",
+  "permissions": [
+    "sidePanel"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js"
+  },
+  "side_panel": {
+    "default_path": "src/popup/popup.html"
+  },
+  "action": {
+    "default_title": "Open Negotiating Agent"
+  }
+}
