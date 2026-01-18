@@ -115,6 +115,10 @@ const insertText = (text: string) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === "INSERT_TEXT") {
         insertText(request.text)
+    } else if (request.type === "GET_CHAT_HISTORY") {
+        console.log("AI Negotiator: Received request for chat history")
+        processAllMessages()
+        extractChatMetadata()
     }
 })
 

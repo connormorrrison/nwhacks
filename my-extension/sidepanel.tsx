@@ -1,4 +1,4 @@
-import { Settings } from "lucide-react"
+import { RefreshCw, Settings } from "lucide-react"
 import { useState, useEffect } from "react"
 
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,7 @@ import {
     PopoverTrigger
 } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
+import { ShimmeringText } from "@/components/ui/shimmering-text"
 import { cn } from "@/lib/utils"
 
 import "./style.css"
@@ -42,9 +43,27 @@ const Switch = ({ checked, onCheckedChange }: any) => (
 function SidePanel() {
     const [messages, setMessages] = useState<{ text: string, sender: "me" | "them" }[]>([])
     const [metadata, setMetadata] = useState<{ itemInfo: string | null, personName: string | null }>({ itemInfo: null, personName: null })
+    const [isLoading, setIsLoading] = useState(false)
+    const [loadingText, setLoadingText] = useState("Agent is working...")
 
-    // Listen for messages from the content script
+    // Loading text cycle
     useEffect(() => {
+        if (!isLoading) return
+
+        const texts = ["Agent is working...", "Thinking...", "Negotiating..."]
+        let index = 0
+
+        const interval = setInterval(() => {
+            index = (index + 1) % texts.length
+            setLoadingText(texts[index])
+        }, 2000)
+
+        return () => clearInterval(interval)
+    }, [isLoading])
+
+    // Listen for messages from the content script and request initial history
+    useEffect(() => {
+        // 1. Listen for incoming messages
         const messageListener = (request, sender, sendResponse) => {
             if (request.type === "FULL_MESSAGE_HISTORY") {
                 console.log("AI Negotiator: Received full history:", request.messages)
@@ -55,6 +74,31 @@ function SidePanel() {
             }
         }
         chrome.runtime.onMessage.addListener(messageListener)
+
+        // 2. Request initial history from any open Facebook tab
+        const fetchHistory = async () => {
+            try {
+                const tabs = await chrome.tabs.query({ url: "*://*.facebook.com/*" })
+                if (tabs.length > 0) {
+                    console.log("AI Negotiator: Found Facebook tabs:", tabs.length)
+                    // Send to all found Facebook tabs just to be safe
+                    for (const tab of tabs) {
+                        if (tab.id) {
+                            chrome.tabs.sendMessage(tab.id, { type: "GET_CHAT_HISTORY" }).catch(() => {
+                                // Ignore errors (e.g. if content script isn't ready)
+                            })
+                        }
+                    }
+                } else {
+                    console.log("AI Negotiator: No Facebook tabs found")
+                }
+            } catch (error) {
+                console.error("Failed to query tabs:", error)
+            }
+        }
+
+        fetchHistory()
+
         return () => chrome.runtime.onMessage.removeListener(messageListener)
     }, [])
 
@@ -62,10 +106,37 @@ function SidePanel() {
         <div className="flex flex-col h-screen w-screen bg-background text-foreground p-4 font-sans">
             <div className="flex justify-between items-start mb-6">
                 <div className="space-y-4">
-                    <h2 className="text-2xl font-normal tracking-tight">AI Negotiator</h2>
+                    <div className="flex items-center gap-2">
+                        <h2 className="text-2xl font-normal tracking-tight">AI Negotiator</h2>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                            onClick={() => {
+                                // Manually trigger fetch history
+                                const fetchHistory = async () => {
+                                    try {
+                                        const tabs = await chrome.tabs.query({ url: "*://*.facebook.com/*" })
+                                        if (tabs.length > 0) {
+                                            for (const tab of tabs) {
+                                                if (tab.id) {
+                                                    chrome.tabs.sendMessage(tab.id, { type: "GET_CHAT_HISTORY" }).catch(() => { })
+                                                }
+                                            }
+                                        }
+                                    } catch (error) {
+                                        console.error("Failed to query tabs:", error)
+                                    }
+                                }
+                                fetchHistory()
+                            }}
+                        >
+                            <RefreshCw className="h-4 w-4" />
+                        </Button>
+                    </div>
 
                     {(metadata.personName || metadata.itemInfo) && (
-                        <div className="space-y-1 bg-muted/50 p-3 rounded-lg border">
+                        <div className="space-y-1 bg-muted/50 p-3 rounded-lg border animate-in fade-in slide-in-from-top-2 duration-500">
                             {metadata.personName && (
                                 <p className="text-sm text-muted-foreground">
                                     Negotiating with <span className="font-medium text-foreground">{metadata.personName}</span>
@@ -119,15 +190,23 @@ function SidePanel() {
                         <div
                             key={index}
                             className={cn(
-                                "p-2 rounded-lg text-sm max-w-[80%]",
+                                "p-2 rounded-lg text-sm max-w-[80%] animate-in fade-in slide-in-from-bottom-2 duration-300 fill-mode-both",
                                 msg.sender === "me"
                                     ? "bg-primary text-primary-foreground ml-auto"
                                     : "bg-muted text-foreground mr-auto"
                             )}
+                            style={{ animationDelay: `${index * 100}ms` }}
                         >
                             {msg.text}
                         </div>
                     ))
+                )}
+
+                {/* Loading State */}
+                {isLoading && (
+                    <div className="flex justify-center p-4 animate-in fade-in duration-300">
+                        <ShimmeringText text={loadingText} className="text-sm font-medium" duration={1.5} repeatDelay={1} />
+                    </div>
                 )}
             </div>
 
@@ -138,6 +217,16 @@ function SidePanel() {
                     onKeyDown={(e) => {
                         if (e.key === "Enter") {
                             const target = e.target as HTMLInputElement
+                            const text = target.value
+                            if (!text) return
+
+                            // Simulate loading for demo purposes (remove later)
+                            if (text === "/load") {
+                                setIsLoading(!isLoading)
+                                target.value = ""
+                                return
+                            }
+
                             chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
                                 if (tabs[0]?.id) {
                                     chrome.tabs.sendMessage(tabs[0].id, {
