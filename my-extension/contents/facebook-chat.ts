@@ -118,16 +118,92 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 })
 
+// Function to extract chat metadata (Item info and Person name)
+const extractChatMetadata = () => {
+    console.log("AI Negotiator: --- Metadata Extraction Start ---")
+
+    // 1. Try to find Person Name (H5 is usually reliable for the header)
+    const h5s = document.querySelectorAll('h5')
+    let personName: string | null = null
+    if (h5s.length > 0) {
+        personName = h5s[0].textContent
+    }
+
+    // 2. Try to find Item Info
+    let itemInfo: string | null = null
+
+    // Strategy A: Find all divs with the class user provided and filter
+    const candidateDivs = document.querySelectorAll('div.xu06os2.x1ok221b')
+    console.log(`AI Negotiator: Found ${candidateDivs.length} candidate divs`)
+
+    candidateDivs.forEach((div, i) => {
+        const text = div.textContent
+        console.log(`AI Negotiator: Candidate [${i}]:`, text)
+        if (text && text !== "Marketplace" && (text.includes("CA$") || text.includes("$") || text.includes("-"))) {
+            itemInfo = text
+        }
+    })
+
+    // Strategy B: Look for "Marketplace" text and get the next sibling
+    if (!itemInfo) {
+        const marketplaceSpan = Array.from(document.querySelectorAll('span')).find(s => s.textContent === "Marketplace")
+        if (marketplaceSpan) {
+            // Go up to the container div
+            const container = marketplaceSpan.closest('div.xu06os2.x1ok221b')
+            if (container && container.nextElementSibling) {
+                itemInfo = container.nextElementSibling.textContent
+                console.log("AI Negotiator: Found item via Marketplace sibling:", itemInfo)
+            }
+        }
+    }
+
+    // Strategy C: Brute force search for "CA$" or "$" (Fallback)
+    if (!itemInfo) {
+        const allElements = document.querySelectorAll('*')
+        for (const el of allElements) {
+            // Look for leaf nodes (no children) with text
+            if (el.children.length === 0 && el.textContent) {
+                const text = el.textContent
+                if ((text.includes("CA$") || text.includes("$")) && /\d/.test(text) && text.length < 100) {
+                    console.log("AI Negotiator: Found potential item via brute force:", el)
+                    itemInfo = text
+                    break // Stop at first match
+                }
+            }
+        }
+    }
+
+    console.log("AI Negotiator: Final Decision -> Name:", personName, "Item:", itemInfo)
+
+    if (itemInfo || personName) {
+        try {
+            chrome.runtime.sendMessage({
+                type: "CHAT_METADATA",
+                metadata: { itemInfo, personName }
+            }).catch(() => { })
+        } catch (e) {
+            // Ignore context invalidation
+        }
+    }
+    console.log("AI Negotiator: --- Metadata Extraction End ---")
+}
+
 window.addEventListener("load", () => {
     // 1. Process initial messages
-    setTimeout(processAllMessages, 2000)
+    setTimeout(() => {
+        processAllMessages()
+        extractChatMetadata()
+    }, 2000)
 
     // 2. Set up MutationObserver to watch for changes
     // We debounce the update to avoid sending too many messages during rapid loading
     let timeout: NodeJS.Timeout
     const observer = new MutationObserver(() => {
         clearTimeout(timeout)
-        timeout = setTimeout(processAllMessages, 500)
+        timeout = setTimeout(() => {
+            processAllMessages()
+            extractChatMetadata()
+        }, 500)
     })
 
     observer.observe(document.body, {

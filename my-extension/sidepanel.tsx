@@ -16,6 +16,7 @@ import "./style.css"
 
 function SidePanel() {
     const [messages, setMessages] = useState<{ text: string, sender: "me" | "them" }[]>([])
+    const [metadata, setMetadata] = useState<{ itemInfo: string | null, personName: string | null }>({ itemInfo: null, personName: null })
 
     // Listen for messages from the content script
     useEffect(() => {
@@ -24,6 +25,9 @@ function SidePanel() {
                 console.log("AI Negotiator: Received full history:", request.messages)
                 setMessages(request.messages)
             }
+            if (request.type === "CHAT_METADATA") {
+                setMetadata(request.metadata)
+            }
         }
         chrome.runtime.onMessage.addListener(messageListener)
         return () => chrome.runtime.onMessage.removeListener(messageListener)
@@ -31,8 +35,20 @@ function SidePanel() {
 
     return (
         <div className="flex flex-col h-screen w-screen bg-background text-foreground p-4 font-sans">
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-normal">AI Negotiator</h2>
+            <div className="flex justify-between items-center mb-4">
+                <div>
+                    <h2 className="text-2xl font-normal">AI Negotiator</h2>
+                    {metadata.personName && (
+                        <p className="text-sm text-muted-foreground">
+                            Negotiating with <span className="font-medium text-foreground">{metadata.personName}</span>
+                        </p>
+                    )}
+                    {metadata.itemInfo && (
+                        <p className="text-xs text-muted-foreground truncate max-w-[200px]">
+                            {metadata.itemInfo}
+                        </p>
+                    )}
+                </div>
                 <Popover>
                     <PopoverTrigger asChild>
                         <Button variant="outline" size="icon">
