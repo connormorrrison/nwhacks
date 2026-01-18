@@ -4,7 +4,10 @@
   "version": "1.0",
   "description": "AI-powered negotiation assistant for Facebook Marketplace",
   "permissions": [
-    "sidePanel"
+    "sidePanel",
+    "storage",
+    "activeTab",
+    "scripting"
   ],
   "background": {
     "service_worker": "src/background/service-worker.js"
@@ -15,4 +18,13 @@
   "action": {
     "default_title": "Open Negotiating Agent"
   }
+
+  ,
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
 }
