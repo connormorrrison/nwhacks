@@ -210,7 +210,7 @@ function SidePanel() {
             {/* Header Section */}
             <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-4">
-                    <h2 className="text-2xl font-normal tracking-tight">AI Negotiator</h2>
+                    <h2 className="text-2xl font-normal tracking-tight">Negotiagent</h2>
                     <div className={cn("w-2 h-2 rounded-full", isConnected ? "bg-green-500 animate-pulse" : "bg-red-500")} title={isConnected ? "Connected" : "Disconnected"} />
                     <Button
                         variant="ghost"
@@ -345,8 +345,8 @@ function SidePanel() {
             {/* Message Display Area */}
             <div className="flex-1 overflow-y-auto mb-4 border rounded-md p-4 space-y-2">
                 {messages.length === 0 ? (
-                    <div className="flex items-center justify-center h-full text-muted-foreground animate-in fade-in duration-700">
-                        Select an item to negotiate
+                    <div className="flex items-center justify-center h-full text-sm font-normal text-muted-foreground animate-in fade-in duration-700">
+                        Awaiting incoming messages
                     </div>
                 ) : (
                     messages.map((msg, index) => (
