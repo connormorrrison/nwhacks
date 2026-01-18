@@ -2,22 +2,23 @@ import { GoogleGenAI } from "@google/genai"
 
 console.log("Loading Gemini Client...")
 
-if (!process.env.GEMINI_API_KEY) {
+const apiKey = process.env.PLASMO_PUBLIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY || ""
+
+if (!apiKey) {
     console.warn("WARN: GEMINI_API_KEY is not set in environment variables.")
 }
 
 const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY || ""
+    apiKey: apiKey
 })
 
 export const generateReply = async (prompt: string): Promise<string> => {
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview", // Using the 3.0 preview as verified
+            model: "gemini-1.5-flash-001",
             contents: prompt
         })
 
-        // Note: In @google/genai SDK, text is a property getter, not a function
         return response.text || ""
     } catch (error) {
         console.error("Error generating reply from Gemini:", error)
@@ -26,7 +27,7 @@ export const generateReply = async (prompt: string): Promise<string> => {
 }
 
 export interface Suggestion {
-    label: "Accept" | "Counter" | "Decline" | "Polite"
+    label: "Reply"
     text: string
 }
 
@@ -34,6 +35,10 @@ export const generateNegotiationSuggestions = async (
     history: { text: string; sender: "me" | "them" }[],
     metadata: { itemInfo: string | null; personName: string | null }
 ): Promise<Suggestion[]> => {
+    console.log("AI Client: generateNegotiationSuggestions called")
+    console.log("AI Client: API Key present?", !!apiKey)
+    console.log("AI Client: History length:", history.length)
+
     try {
         const prompt = `
 You are an expert negotiation assistant helping a seller on Facebook Marketplace.
@@ -44,35 +49,47 @@ Context:
 Chat History:
 ${history.map((h) => `${h.sender.toUpperCase()}: ${h.text}`).join("\n")}
 
-Task: Generate 3 distinct reply options for the seller ("ME") to send next.
-1. Accept: Agree to the deal or answer positively.
-2. Counter: Propose a different price or condition.
-3. Decline: Politely refuse.
+Task: Generate the single best reply for the seller ("ME") to send next.
+The reply should be polite, professional, and aim to move the negotiation forward.
+If the buyer's offer is too low, counter it. If it's reasonable, accept it.
 
-Output ONLY a JSON array with this structure:
+Output ONLY a JSON array with this structure containing ONE element:
 [
-  { "label": "Accept", "text": "..." },
-  { "label": "Counter", "text": "..." },
-  { "label": "Decline", "text": "..." }
+  { "label": "Reply", "text": "..." }
 ]
 Do not include markdown formatting like \`\`\`json. Just the raw JSON.
 `
-
+        console.log("AI Client: Sending prompt to Gemini...")
         const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
+            model: "gemini-flash-latest",
             contents: prompt,
             config: {
                 responseMimeType: "application/json"
             }
         })
 
-        const text = response.text || "[]"
+        console.log("AI Client: Received response from Gemini")
+
+        // Handle response parsing manually since .text() helper might be missing
+        let text = ""
+        if (response.candidates && response.candidates[0]?.content?.parts?.[0]?.text) {
+            text = response.candidates[0].content.parts[0].text
+        } else if (typeof response.text === 'function') {
+            text = response.text()
+        } else if (response.text) {
+            text = response.text
+        }
+
+        console.log("AI Client: Raw response text:", text)
+
         // Clean up if model adds markdown despite instructions
         const cleanText = text.replace(/```json/g, "").replace(/```/g, "").trim()
 
-        return JSON.parse(cleanText) as Suggestion[]
+        const parsed = JSON.parse(cleanText) as Suggestion[]
+        console.log("AI Client: Parsed suggestions:", parsed)
+        return parsed
     } catch (error) {
-        console.error("Error generating suggestions:", error)
+        console.error("AI Client: Error generating suggestions:", error)
         return []
     }
 }

@@ -1,16 +1,22 @@
 import type { PlasmoCSConfig } from "plasmo"
 
 export const config: PlasmoCSConfig = {
-  matches: ["*://*.facebook.com/*"],
-  all_frames: true
+    matches: ["*://*.facebook.com/*"],
+    all_frames: true
 }
 
 console.log("AI Negotiator: Content script loaded on Facebook")
 
-// Function to extract text from a message row
-const extractMessageText = (row: Element): { text: string, sender: "me" | "them" } | null => {
-    // The user identified that text is in a div with dir="auto"
-    const textDiv = row.querySelector('div[dir="auto"]')
+// Function to extract text from a message row or bubble
+const extractMessageText = (element: Element): { text: string, sender: "me" | "them" } | null => {
+    // Strategy 1: Look for child div with dir="auto" (Marketplace rows)
+    let textDiv = element.querySelector('div[dir="auto"]')
+
+    // Strategy 2: The element itself is the text div (Regular chat fallback)
+    if (!textDiv && element.getAttribute("dir") === "auto") {
+        textDiv = element
+    }
+
     if (!textDiv) return null
 
     const text = textDiv.textContent
@@ -26,38 +32,88 @@ const extractMessageText = (row: Element): { text: string, sender: "me" | "them"
         sender = "them"
     }
 
-    console.log(`AI Negotiator: Extracted: "${text.substring(0, 20)}...", Class: ${className}, Sender: ${sender}`)
+    // console.log(`AI Negotiator: Extracted: "${text.substring(0, 20)}...", Class: ${className}, Sender: ${sender}`)
 
     return { text, sender }
 }
 
-// Function to process and send ALL messages (full history)
-const processAllMessages = () => {
-    const rows = document.querySelectorAll('div[role="row"]')
-    const messages: { text: string, sender: "me" | "them" }[] = []
+// State to track sent messages
+let lastMessageSignature = ""
+let observer: MutationObserver | null = null
 
-    rows.forEach((row) => {
-        const msg = extractMessageText(row)
+// Helper to safely send messages
+const safelySendMessage = (message: any) => {
+    if (chrome.runtime?.id) {
+        chrome.runtime.sendMessage(message).catch((error) => {
+            if (error.message.includes("Extension context invalidated")) {
+                console.log("AI Negotiator: Context invalidated, stopping observer.")
+                // Stop the observer if context is invalid
+                if (observer) observer.disconnect()
+            }
+        })
+    }
+}
+
+// Function to process messages (Robust Sync)
+const processMessages = () => {
+    // Unified Selector: Target message bubbles directly
+    // This works for both Marketplace (which contains these bubbles) and Regular chats
+    const elements = document.querySelectorAll('div[dir="auto"].xyk4ms5, div[dir="auto"].x18lvrbx')
+
+    const allMessages: { text: string, sender: "me" | "them" }[] = []
+
+    elements.forEach((el) => {
+        const msg = extractMessageText(el)
         if (msg) {
-            messages.push(msg)
+            allMessages.push(msg)
         }
     })
 
-    if (messages.length > 0) {
-        console.log(`AI Negotiator: Sending ${messages.length} messages to side panel`)
-        try {
-            chrome.runtime.sendMessage({
-                type: "FULL_MESSAGE_HISTORY", // Changed type to indicate full history
-                messages: messages
-            }).catch(() => {
-                // Side panel might be closed, ignore error
-            })
-        } catch (e) {
-            // Extension context invalidated (script is orphaned)
-            console.log("AI Negotiator: Connection lost (please refresh page)")
-        }
+    if (allMessages.length === 0) return
+
+    // Create a signature to detect ANY change (new message, deletion, chat switch)
+    const lastMsg = allMessages[allMessages.length - 1]
+    const currentSignature = `${allMessages.length}-${lastMsg.text}-${lastMsg.sender}`
+
+    if (currentSignature !== lastMessageSignature) {
+        console.log(`AI Negotiator: Syncing ${allMessages.length} messages (Sig: ${currentSignature})`)
+        safelySendMessage({
+            type: "FULL_MESSAGE_HISTORY",
+            messages: allMessages
+        })
+        lastMessageSignature = currentSignature
     }
 }
+
+// ... (rest of file)
+
+window.addEventListener("load", () => {
+    // 1. Process initial messages
+    setTimeout(() => {
+        processMessages()
+        extractChatMetadata()
+    }, 2000)
+
+    // 2. Set up MutationObserver to watch for changes
+    // Faster debounce (100ms) for snappier updates
+    let timeout: NodeJS.Timeout
+    observer = new MutationObserver(() => {
+        clearTimeout(timeout)
+        timeout = setTimeout(() => {
+            processMessages()
+            extractChatMetadata()
+        }, 100)
+    })
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    })
+
+    // 3. Periodic Refresh (Fallback for missed mutations)
+    setInterval(() => {
+        processMessages()
+    }, 3000)
+})
 
 // Function to insert text into the chat input
 const insertText = (text: string) => {
@@ -117,8 +173,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         insertText(request.text)
     } else if (request.type === "GET_CHAT_HISTORY") {
         console.log("AI Negotiator: Received request for chat history")
-        processAllMessages()
+        processMessages()
         extractChatMetadata()
+    } else if (request.type === "LOG") {
+        console.log(`[SIDE_PANEL]: ${request.message}`)
     }
 })
 
@@ -127,10 +185,17 @@ const extractChatMetadata = () => {
     console.log("AI Negotiator: --- Metadata Extraction Start ---")
 
     // 1. Try to find Person Name (H5 is usually reliable for the header)
+    // Scope to main chat if possible, or filter out common non-name headers
     const h5s = document.querySelectorAll('h5')
     let personName: string | null = null
-    if (h5s.length > 0) {
-        personName = h5s[0].textContent
+
+    for (const h5 of h5s) {
+        const text = h5.textContent
+        // Relaxed filter: just avoid "You sent" and "Marketplace"
+        if (text && text !== "You sent" && text !== "Marketplace") {
+            personName = text
+            break
+        }
     }
 
     // 2. Try to find Item Info
@@ -142,7 +207,7 @@ const extractChatMetadata = () => {
 
     candidateDivs.forEach((div, i) => {
         const text = div.textContent
-        console.log(`AI Negotiator: Candidate [${i}]:`, text)
+        // console.log(`AI Negotiator: Candidate [${i}]:`, text) // Reduced noise
         if (text && text !== "Marketplace" && (text.includes("CA$") || text.includes("$") || text.includes("-"))) {
             itemInfo = text
         }
@@ -180,14 +245,10 @@ const extractChatMetadata = () => {
     console.log("AI Negotiator: Final Decision -> Name:", personName, "Item:", itemInfo)
 
     if (itemInfo || personName) {
-        try {
-            chrome.runtime.sendMessage({
-                type: "CHAT_METADATA",
-                metadata: { itemInfo, personName }
-            }).catch(() => { })
-        } catch (e) {
-            // Ignore context invalidation
-        }
+        safelySendMessage({
+            type: "CHAT_METADATA",
+            metadata: { itemInfo, personName }
+        })
     }
     console.log("AI Negotiator: --- Metadata Extraction End ---")
 }
@@ -195,23 +256,27 @@ const extractChatMetadata = () => {
 window.addEventListener("load", () => {
     // 1. Process initial messages
     setTimeout(() => {
-        processAllMessages()
+        processMessages()
         extractChatMetadata()
     }, 2000)
 
     // 2. Set up MutationObserver to watch for changes
     // We debounce the update to avoid sending too many messages during rapid loading
     let timeout: NodeJS.Timeout
-    const observer = new MutationObserver(() => {
+    observer = new MutationObserver(() => {
         clearTimeout(timeout)
         timeout = setTimeout(() => {
-            processAllMessages()
+            processMessages()
             extractChatMetadata()
         }, 500)
     })
-
     observer.observe(document.body, {
         childList: true,
         subtree: true
     })
+
+    // 3. Periodic Refresh (Fallback for missed mutations)
+    setInterval(() => {
+        processMessages()
+    }, 3000)
 })

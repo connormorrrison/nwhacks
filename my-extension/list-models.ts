@@ -1,24 +1,28 @@
 
 import { GoogleGenAI } from "@google/genai";
 
+const apiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_KEY;
+
 const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY
+    apiKey: apiKey
 });
 
 async function main() {
+    console.log("Listing models...");
     try {
-        console.log("Listing models...");
-        // The SDK structure might be different, let's try the standard way if possible
-        // Note: The new @google/genai SDK might not have listModels exposed on the root or models the same way.
-        // Let's try to infer from the error or just try a few known valid ones.
-
-        // Actually, for the new SDK, let's just try to print the error from the first attempt explicitly
-        // and try a very standard model like 'gemini-pro' just in case.
-
+        // The SDK structure might differ, checking documentation or common patterns
+        // Usually it's ai.models.list()
         const response = await ai.models.list();
+        console.log("Available models:");
+        // Response might be an object with 'models' property or an array
+        const models = response.models || response;
 
-        for await (const model of response) {
-            console.log(model.name);
+        if (Array.isArray(models)) {
+            models.forEach((m: any) => {
+                console.log(m.name);
+            });
+        } else {
+            console.log(JSON.stringify(models, null, 2));
         }
 
     } catch (e) {
