@@ -14,34 +14,14 @@ import { cn } from "@/lib/utils"
 
 import "./style.css"
 
-// Simple button component
-const Button = ({ children, onClick, className }: any) => (
-  <button onClick={onClick} className={className} style={{ padding: "8px 12px", cursor: "pointer" }}>
-    {children}
-  </button>
-)
 
-// Simple input component
-const Input = ({ value, onChange, placeholder, className }: any) => (
-  <input value={value} onChange={onChange} placeholder={placeholder} className={className} style={{ padding: "6px", width: "100%" }} />
-)
-
-// Simple label component
-const Label = ({ children }: any) => <label style={{ display: "block", marginBottom: "4px", fontWeight: "600" }}>{children}</label>
-
-// Simple popover components
-const Popover = ({ children }: any) => <div>{children}</div>
-const PopoverTrigger = ({ children }: any) => <>{children}</>
-const PopoverContent = ({ children }: any) => <div style={{ border: "1px solid #ccc", padding: "8px", marginTop: "4px" }}>{children}</div>
-
-// Simple switch component
-const Switch = ({ checked, onCheckedChange }: any) => (
-  <input type="checkbox" checked={checked} onChange={(e: any) => onCheckedChange(e.target.checked)} style={{ cursor: "pointer" }} />
-)
 
 function SidePanel() {
     const [messages, setMessages] = useState<{ text: string, sender: "me" | "them" }[]>([])
     const [metadata, setMetadata] = useState<{ itemInfo: string | null, personName: string | null }>({ itemInfo: null, personName: null })
+    const [suggestions, setSuggestions] = useState<{ label: string, text: string }[]>([])
+    const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false)
+    const [input, setInput] = useState("") // Controlled input
 
     // Listen for messages from the content script
     useEffect(() => {
@@ -57,6 +37,31 @@ function SidePanel() {
         chrome.runtime.onMessage.addListener(messageListener)
         return () => chrome.runtime.onMessage.removeListener(messageListener)
     }, [])
+
+    const handleGenerateSuggestions = async () => {
+        setIsLoadingSuggestions(true)
+        try {
+            // Dynamically import the AI client to avoid load-time issues if env vars missing
+            const { generateNegotiationSuggestions } = await import("~lib/ai-client")
+            const results = await generateNegotiationSuggestions(messages, metadata)
+            setSuggestions(results)
+        } catch (error) {
+            console.error("Failed to generate suggestions:", error)
+        } finally {
+            setIsLoadingSuggestions(false)
+        }
+    }
+
+    const sendToPage = (text: string) => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0]?.id) {
+                chrome.tabs.sendMessage(tabs[0].id, {
+                    type: "INSERT_TEXT",
+                    text: text
+                })
+            }
+        })
+    }
 
     return (
         <div className="flex flex-col h-screen w-screen bg-background text-foreground p-4 font-sans">
@@ -93,16 +98,6 @@ function SidePanel() {
                                     Manage your negotiation preferences.
                                 </p>
                             </div>
-                            <div className="grid gap-4">
-                                <div className="flex items-center justify-between space-x-2">
-                                    <Label htmlFor="auto-negotiate">Auto-negotiate</Label>
-                                    <Switch
-                                        id="auto-negotiate"
-                                        checked={autoNegotiate}
-                                        onCheckedChange={onToggleAuto}
-                                    />
-                                </div>
-                            </div>
                         </div>
                     </PopoverContent>
                 </Popover>
@@ -131,39 +126,64 @@ function SidePanel() {
                 )}
             </div>
 
-            {/* Test Input Area */}
+            {/* Suggestions Area */}
+            <div className="mb-4">
+                {suggestions.length === 0 ? (
+                    <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={handleGenerateSuggestions}
+                        disabled={messages.length === 0 || isLoadingSuggestions}
+                    >
+                        {isLoadingSuggestions ? "Thinking..." : "✨ Suggest Replies"}
+                    </Button>
+                ) : (
+                    <div className="grid gap-2">
+                        <div className="flex justify-between items-center">
+                            <span className="text-xs text-muted-foreground">AI Suggestions</span>
+                            <button onClick={() => setSuggestions([])} className="text-xs text-muted-foreground hover:text-foreground">Clear</button>
+                        </div>
+                        {suggestions.map((suggestion, idx) => (
+                            <button
+                                key={idx}
+                                className="text-left p-3 rounded-md border hover:bg-muted/50 transition-colors text-sm flex flex-col gap-1"
+                                onClick={() => {
+                                    setInput(suggestion.text)
+                                    sendToPage(suggestion.text) // Auto-fill on click
+                                }}
+                            >
+                                <span className={cn(
+                                    "text-xs font-bold px-2 py-0.5 rounded-full w-fit",
+                                    suggestion.label === "Accept" ? "bg-green-100 text-green-700" :
+                                        suggestion.label === "Counter" ? "bg-blue-100 text-blue-700" :
+                                            "bg-red-100 text-red-700"
+                                )}>
+                                    {suggestion.label}
+                                </span>
+                                <span className="line-clamp-2">{suggestion.text}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Input Area */}
             <div className="flex gap-2">
                 <Input
                     placeholder="Type a message..."
-                    onKeyDown={(e) => {
+                    value={input}
+                    onChange={(e: any) => setInput(e.target.value)}
+                    onKeyDown={(e: any) => {
                         if (e.key === "Enter") {
-                            const target = e.target as HTMLInputElement
-                            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                                if (tabs[0]?.id) {
-                                    chrome.tabs.sendMessage(tabs[0].id, {
-                                        type: "INSERT_TEXT",
-                                        text: target.value
-                                    })
-                                    target.value = ""
-                                }
-                            })
+                            sendToPage(input)
+                            setInput("")
                         }
                     }}
                 />
                 <Button
                     onClick={() => {
-                        const input = document.querySelector('input') as HTMLInputElement
-                        if (input && input.value) {
-                            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                                if (tabs[0]?.id) {
-                                    chrome.tabs.sendMessage(tabs[0].id, {
-                                        type: "INSERT_TEXT",
-                                        text: input.value
-                                    })
-                                    input.value = ""
-                                }
-                            })
-                        }
+                        sendToPage(input)
+                        setInput("")
                     }}
                 >
                     Send
