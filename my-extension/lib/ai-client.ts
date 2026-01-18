@@ -31,13 +31,22 @@ export interface Suggestion {
     text: string
 }
 
+export interface NegotiationSettings {
+    autoNegotiate: boolean
+    priceDeviation: number
+    tone: "friendly" | "professional" | "firm"
+    address: string
+}
+
 export const generateNegotiationSuggestions = async (
     history: { text: string; sender: "me" | "them" }[],
-    metadata: { itemInfo: string | null; personName: string | null }
+    metadata: { itemInfo: string | null; personName: string | null },
+    settings: NegotiationSettings
 ): Promise<Suggestion[]> => {
     console.log("AI Client: generateNegotiationSuggestions called")
     console.log("AI Client: API Key present?", !!apiKey)
     console.log("AI Client: History length:", history.length)
+    console.log("AI Client: Settings:", settings)
 
     try {
         const prompt = `
@@ -46,12 +55,18 @@ Context:
 - Item: ${metadata.itemInfo || "Unknown item"}
 - Buyer Name: ${metadata.personName || "Buyer"}
 
+Settings & Constraints:
+- Tone: ${settings.tone}
+- Maximum Price Deviation: +/- $${settings.priceDeviation} (Do not accept offers lower than asking price minus this amount)
+- Authorized Pickup Address: ${settings.address || "Do not reveal address yet"} (Only reveal if deal is agreed upon)
+
 Chat History:
 ${history.map((h) => `${h.sender.toUpperCase()}: ${h.text}`).join("\n")}
 
 Task: Generate the single best reply for the seller ("ME") to send next.
-The reply should be polite, professional, and aim to move the negotiation forward.
-If the buyer's offer is too low, counter it. If it's reasonable, accept it.
+The reply should be ${settings.tone}, professional, and aim to move the negotiation forward.
+If the buyer's offer is too low (outside deviation), counter it. If it's reasonable, accept it.
+If the deal is agreed, you may share the pickup address: ${settings.address}.
 
 Output ONLY a JSON array with this structure containing ONE element:
 [

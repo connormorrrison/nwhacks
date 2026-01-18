@@ -1,4 +1,4 @@
-import { RefreshCw, Settings } from "lucide-react"
+import { RefreshCw, Settings, ChevronDown } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
 
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,12 @@ import {
     PopoverContent,
     PopoverTrigger
 } from "@/components/ui/popover"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
 import { ShimmeringText } from "@/components/ui/shimmering-text"
 import { cn } from "@/lib/utils"
@@ -25,8 +31,17 @@ function SidePanel() {
     const [loadingText, setLoadingText] = useState("Agent is working...")
     const [isConnected, setIsConnected] = useState(false)
     const [autoNegotiate, setAutoNegotiate] = useState(true) // Default to true for demo
+    const [priceDeviation, setPriceDeviation] = useState(10)
+    const [tone, setTone] = useState<"friendly" | "professional" | "firm">("friendly")
+    const [address, setAddress] = useState("")
 
     const lastProcessedMessageRef = useRef<string | null>(null)
+    const messagesEndRef = useRef<HTMLDivElement>(null)
+
+    // Auto-scroll to bottom
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    }, [messages, isThinking])
 
     // Loading text cycle
     useEffect(() => {
@@ -121,7 +136,8 @@ function SidePanel() {
 
             // We still use the same function but we'll take the best suggestion (or modify ai-client to return just one)
             // For now, let's assume we take the "Counter" or the first one if available.
-            const results = await generateNegotiationSuggestions(messages, metadata)
+            const settings = { autoNegotiate, priceDeviation, tone, address }
+            const results = await generateNegotiationSuggestions(messages, metadata, settings)
             remoteLog(`✅ AI Results: ${JSON.stringify(results)}`)
 
             if (results && results.length > 0) {
@@ -238,13 +254,47 @@ function SidePanel() {
                                         onCheckedChange={setAutoNegotiate}
                                     />
                                 </div>
-                                <div className="flex items-center justify-between space-x-2">
-                                    <Label htmlFor="aggressive">Be aggressive</Label>
-                                    <Switch id="aggressive" />
+                                <div className="space-y-2">
+                                    <Label htmlFor="price-deviation">Max Price Deviation (+/- $)</Label>
+                                    <Input
+                                        id="price-deviation"
+                                        type="number"
+                                        value={priceDeviation}
+                                        onChange={(e) => setPriceDeviation(Number(e.target.value))}
+                                        className="h-8"
+                                    />
                                 </div>
-                                <div className="flex items-center justify-between space-x-2">
-                                    <Label htmlFor="background-mode">Background mode</Label>
-                                    <Switch id="background-mode" defaultChecked />
+                                <div className="space-y-2">
+                                    <Label htmlFor="tone">Tone</Label>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="outline" className="w-full justify-between h-8 font-normal">
+                                                {tone.charAt(0).toUpperCase() + tone.slice(1)}
+                                                <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent className="w-[240px]">
+                                            <DropdownMenuItem onClick={() => setTone("friendly")}>
+                                                Friendly
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => setTone("professional")}>
+                                                Professional
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => setTone("firm")}>
+                                                Firm
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="address">Authorized Address</Label>
+                                    <Input
+                                        id="address"
+                                        placeholder="e.g. 123 Main St"
+                                        value={address}
+                                        onChange={(e) => setAddress(e.target.value)}
+                                        className="h-8"
+                                    />
                                 </div>
                             </div>
                         </div>
@@ -281,6 +331,7 @@ function SidePanel() {
                         <ShimmeringText text={loadingText} className="text-sm font-medium" duration={1.5} repeatDelay={1} />
                     </div>
                 )}
+                <div ref={messagesEndRef} />
             </div>
 
 
