@@ -34,6 +34,29 @@ function SidePanel() {
     const [priceDeviation, setPriceDeviation] = useState(10)
     const [tone, setTone] = useState<"friendly" | "professional" | "firm">("friendly")
     const [address, setAddress] = useState("")
+    const [authorizeAddress, setAuthorizeAddress] = useState(false)
+
+    // Load settings from storage on mount
+    useEffect(() => {
+        chrome.storage.local.get(["autoNegotiate", "priceDeviation", "tone", "address", "authorizeAddress"], (result) => {
+            if (result.autoNegotiate !== undefined) setAutoNegotiate(result.autoNegotiate)
+            if (result.priceDeviation !== undefined) setPriceDeviation(result.priceDeviation)
+            if (result.tone !== undefined) setTone(result.tone)
+            if (result.address !== undefined) setAddress(result.address)
+            if (result.authorizeAddress !== undefined) setAuthorizeAddress(result.authorizeAddress)
+        })
+    }, [])
+
+    // Save settings to storage whenever they change
+    useEffect(() => {
+        chrome.storage.local.set({
+            autoNegotiate,
+            priceDeviation,
+            tone,
+            address,
+            authorizeAddress
+        })
+    }, [autoNegotiate, priceDeviation, tone, address, authorizeAddress])
 
     const lastProcessedMessageRef = useRef<string | null>(null)
     const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -136,7 +159,7 @@ function SidePanel() {
 
             // We still use the same function but we'll take the best suggestion (or modify ai-client to return just one)
             // For now, let's assume we take the "Counter" or the first one if available.
-            const settings = { autoNegotiate, priceDeviation, tone, address }
+            const settings = { autoNegotiate, priceDeviation, tone, address, authorizeAddress }
             const results = await generateNegotiationSuggestions(messages, metadata, settings)
             remoteLog(`✅ AI Results: ${JSON.stringify(results)}`)
 
@@ -184,53 +207,38 @@ function SidePanel() {
 
     return (
         <div className="flex flex-col h-screen w-screen bg-background text-foreground p-4 font-sans">
-            <div className="flex justify-between items-start mb-6">
-                <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                        <h2 className="text-2xl font-normal tracking-tight">AI Negotiator</h2>
-                        <div className={cn("w-2 h-2 rounded-full", isConnected ? "bg-green-500" : "bg-red-500")} title={isConnected ? "Connected" : "Disconnected"} />
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                            onClick={() => {
-                                // Manually trigger fetch history
-                                const fetchHistory = async () => {
-                                    try {
-                                        const tabs = await chrome.tabs.query({ url: "*://*.facebook.com/*" })
-                                        if (tabs.length > 0) {
-                                            for (const tab of tabs) {
-                                                if (tab.id) {
-                                                    chrome.tabs.sendMessage(tab.id, { type: "GET_CHAT_HISTORY" }).catch(() => { })
-                                                }
+            {/* Header Section */}
+            <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center gap-4">
+                    <h2 className="text-2xl font-normal tracking-tight">AI Negotiator</h2>
+                    <div className={cn("w-2 h-2 rounded-full", isConnected ? "bg-green-500 animate-pulse" : "bg-red-500")} title={isConnected ? "Connected" : "Disconnected"} />
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                        onClick={() => {
+                            // Manually trigger fetch history
+                            const fetchHistory = async () => {
+                                try {
+                                    const tabs = await chrome.tabs.query({ url: "*://*.facebook.com/*" })
+                                    if (tabs.length > 0) {
+                                        for (const tab of tabs) {
+                                            if (tab.id) {
+                                                chrome.tabs.sendMessage(tab.id, { type: "GET_CHAT_HISTORY" }).catch(() => { })
                                             }
                                         }
-                                    } catch (error) {
-                                        console.error("Failed to query tabs:", error)
                                     }
+                                } catch (error) {
+                                    console.error("Failed to query tabs:", error)
                                 }
-                                fetchHistory()
-                            }}
-                        >
-                            <RefreshCw className="h-4 w-4" />
-                        </Button>
-                    </div>
-
-                    {(metadata.personName || metadata.itemInfo) && (
-                        <div className="space-y-1 bg-muted/50 p-3 rounded-lg border animate-in fade-in slide-in-from-top-2 duration-500">
-                            {metadata.personName && (
-                                <p className="text-sm text-muted-foreground">
-                                    Negotiating with <span className="font-medium text-foreground">{metadata.personName}</span>
-                                </p>
-                            )}
-                            {metadata.itemInfo && (
-                                <p className="text-sm font-medium text-primary truncate max-w-[220px]">
-                                    {metadata.itemInfo}
-                                </p>
-                            )}
-                        </div>
-                    )}
+                            }
+                            fetchHistory()
+                        }}
+                    >
+                        <RefreshCw className="h-4 w-4" />
+                    </Button>
                 </div>
+
                 <Popover>
                     <PopoverTrigger asChild>
                         <Button variant="outline" size="icon">
@@ -286,15 +294,29 @@ function SidePanel() {
                                         </DropdownMenuContent>
                                     </DropdownMenu>
                                 </div>
-                                <div className="space-y-2">
-                                    <Label htmlFor="address">Authorized Address</Label>
-                                    <Input
-                                        id="address"
-                                        placeholder="e.g. 123 Main St"
-                                        value={address}
-                                        onChange={(e) => setAddress(e.target.value)}
-                                        className="h-8"
-                                    />
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between space-x-2">
+                                        <Label htmlFor="authorize-address">
+                                            Authorize agent to reveal address
+                                        </Label>
+                                        <Switch
+                                            id="authorize-address"
+                                            checked={authorizeAddress}
+                                            onCheckedChange={setAuthorizeAddress}
+                                        />
+                                    </div>
+                                    {authorizeAddress && (
+                                        <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                                            <Label htmlFor="address">Pickup Address</Label>
+                                            <Input
+                                                id="address"
+                                                placeholder="e.g. 123 Main St"
+                                                value={address}
+                                                onChange={(e) => setAddress(e.target.value)}
+                                                className="h-8"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -302,8 +324,26 @@ function SidePanel() {
                 </Popover>
             </div>
 
+
+
+            {/* Info Box - Moved here and added consistent mb-4 spacing */}
+            {(metadata.personName || metadata.itemInfo) && (
+                <div className="mb-4 space-y-1 bg-muted/50 p-3 rounded-lg border animate-in fade-in slide-in-from-top-2 duration-500">
+                    {metadata.personName && (
+                        <p className="text-sm text-muted-foreground">
+                            Negotiating with <span className="font-medium text-foreground">{metadata.personName}</span>
+                        </p>
+                    )}
+                    {metadata.itemInfo && (
+                        <p className="text-sm font-medium text-primary truncate max-w-[220px]">
+                            {metadata.itemInfo}
+                        </p>
+                    )}
+                </div>
+            )}
+
             {/* Message Display Area */}
-            <div className="flex-1 overflow-y-auto mb-4 border rounded-md p-2 space-y-2">
+            <div className="flex-1 overflow-y-auto mb-4 border rounded-md p-4 space-y-2">
                 {messages.length === 0 ? (
                     <div className="flex items-center justify-center h-full text-muted-foreground animate-in fade-in duration-700">
                         Select an item to negotiate
@@ -313,7 +353,7 @@ function SidePanel() {
                         <div
                             key={index}
                             className={cn(
-                                "p-2 rounded-lg text-sm max-w-[80%] animate-in fade-in slide-in-from-bottom-2 duration-300 fill-mode-both",
+                                "px-4 py-2 rounded-2xl text-sm max-w-[80%] animate-in fade-in slide-in-from-bottom-2 duration-300 fill-mode-both",
                                 msg.sender === "me"
                                     ? "bg-primary text-primary-foreground ml-auto"
                                     : "bg-muted text-foreground mr-auto"
@@ -334,10 +374,8 @@ function SidePanel() {
                 <div ref={messagesEndRef} />
             </div>
 
-
-
             {/* Input Area */}
-            <div className="flex gap-2">
+            <div className="flex gap-4">
                 <Input
                     placeholder="Type a message..."
                     value={input}
@@ -358,8 +396,6 @@ function SidePanel() {
                     Send
                 </Button>
             </div>
-
-
         </div>
     )
 }

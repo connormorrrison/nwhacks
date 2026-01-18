@@ -46,7 +46,8 @@
     ],
     "permissions": [
       "sidePanel",
-      "tabs"
+      "tabs",
+      "storage"
     ]
   }
 }

@@ -36,6 +36,7 @@ export interface NegotiationSettings {
     priceDeviation: number
     tone: "friendly" | "professional" | "firm"
     address: string
+    authorizeAddress: boolean
 }
 
 export const generateNegotiationSuggestions = async (
@@ -48,6 +49,16 @@ export const generateNegotiationSuggestions = async (
     console.log("AI Client: History length:", history.length)
     console.log("AI Client: Settings:", settings)
 
+    const toneInstructions = {
+        friendly: "Use emojis, be casual, enthusiastic, and build rapport. Example: 'Hey! 😊 That sounds great!'",
+        professional: "Be concise, polite, grammatically perfect, and business-like. Example: 'Hello. That works for me.'",
+        firm: "Be direct, serious, do not use emojis, and stand your ground on price. Example: 'No. The price is fixed.'"
+    }
+
+    const addressInstruction = settings.authorizeAddress
+        ? `Authorized Pickup Address: ${settings.address || "Do not reveal address yet"}`
+        : "Authorized Pickup Address: DO NOT REVEAL. You are NOT authorized to share the address."
+
     try {
         const prompt = `
 You are an expert negotiation assistant helping a seller on Facebook Marketplace.
@@ -56,9 +67,15 @@ Context:
 - Buyer Name: ${metadata.personName || "Buyer"}
 
 Settings & Constraints:
-- Tone: ${settings.tone}
-- Maximum Price Deviation: +/- $${settings.priceDeviation} (Do not accept offers lower than asking price minus this amount)
-- Authorized Pickup Address: ${settings.address || "Do not reveal address yet"} (Only reveal if deal is agreed upon)
+- Tone: ${settings.tone.toUpperCase()}
+- Tone Instructions: ${toneInstructions[settings.tone]}
+- Maximum Price Deviation: +/- $${settings.priceDeviation}
+- ${addressInstruction}
+
+Strict Rules:
+1. PRICE: You strictly CANNOT accept any offer below [Asking Price - $${settings.priceDeviation}]. You must counter-offer if the buyer goes lower.
+2. ADDRESS: ${settings.authorizeAddress ? "Only reveal the address if the buyer explicitly agrees to the price or asks for pickup details AFTER a deal is struck." : "NEVER reveal the address. You are not authorized."}
+3. TONE: You must strictly adhere to the '${settings.tone}' tone instructions above.
 
 Chat History:
 ${history.map((h) => `${h.sender.toUpperCase()}: ${h.text}`).join("\n")}
