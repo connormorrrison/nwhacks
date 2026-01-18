@@ -1,7 +1,8 @@
 import { Settings } from "lucide-react"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
     Popover,
@@ -17,7 +18,7 @@ function SidePanel() {
     const [messages, setMessages] = useState<{ text: string, sender: "me" | "them" }[]>([])
 
     // Listen for messages from the content script
-    useState(() => {
+    useEffect(() => {
         const messageListener = (request, sender, sendResponse) => {
             if (request.type === "FULL_MESSAGE_HISTORY") {
                 console.log("AI Negotiator: Received full history:", request.messages)
@@ -26,7 +27,7 @@ function SidePanel() {
         }
         chrome.runtime.onMessage.addListener(messageListener)
         return () => chrome.runtime.onMessage.removeListener(messageListener)
-    })
+    }, [])
 
     return (
         <div className="flex flex-col h-screen w-screen bg-background text-foreground p-4 font-sans">
@@ -86,6 +87,45 @@ function SidePanel() {
                         </div>
                     ))
                 )}
+            </div>
+
+            {/* Test Input Area */}
+            <div className="flex gap-2">
+                <Input
+                    placeholder="Type a message..."
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            const target = e.target as HTMLInputElement
+                            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                                if (tabs[0]?.id) {
+                                    chrome.tabs.sendMessage(tabs[0].id, {
+                                        type: "INSERT_TEXT",
+                                        text: target.value
+                                    })
+                                    target.value = ""
+                                }
+                            })
+                        }
+                    }}
+                />
+                <Button
+                    onClick={() => {
+                        const input = document.querySelector('input') as HTMLInputElement
+                        if (input && input.value) {
+                            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                                if (tabs[0]?.id) {
+                                    chrome.tabs.sendMessage(tabs[0].id, {
+                                        type: "INSERT_TEXT",
+                                        text: input.value
+                                    })
+                                    input.value = ""
+                                }
+                            })
+                        }
+                    }}
+                >
+                    Send
+                </Button>
             </div>
         </div>
     )

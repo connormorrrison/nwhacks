@@ -45,12 +45,78 @@ const processAllMessages = () => {
 
     if (messages.length > 0) {
         console.log(`AI Negotiator: Sending ${messages.length} messages to side panel`)
-        chrome.runtime.sendMessage({
-            type: "FULL_MESSAGE_HISTORY", // Changed type to indicate full history
-            messages: messages
-        })
+        try {
+            chrome.runtime.sendMessage({
+                type: "FULL_MESSAGE_HISTORY", // Changed type to indicate full history
+                messages: messages
+            }).catch(() => {
+                // Side panel might be closed, ignore error
+            })
+        } catch (e) {
+            // Extension context invalidated (script is orphaned)
+            console.log("AI Negotiator: Connection lost (please refresh page)")
+        }
     }
 }
+
+// Function to insert text into the chat input
+const insertText = (text: string) => {
+    // Try to find the input box
+    // Strategy 1: Look for the specific P tag user identified
+    let inputBox = document.querySelector('p.xat24cr.xdj266r') as HTMLElement
+
+    // Strategy 2: Look for the standard role="textbox" which is more robust
+    if (!inputBox) {
+        inputBox = document.querySelector('[role="textbox"]') as HTMLElement
+    }
+
+    if (inputBox) {
+        console.log("AI Negotiator: Found input box:", inputBox)
+
+        // Focus the box
+        inputBox.focus()
+
+        // If it's a contenteditable div/p, we might need to clear the <br> first
+        if (inputBox.innerHTML === "<br>") {
+            inputBox.innerHTML = ""
+        }
+
+        // Insert text
+        // For contenteditable, document.execCommand is often the most reliable way to trigger React events
+        const success = document.execCommand("insertText", false, text)
+
+        if (!success) {
+            // Fallback: Direct manipulation + events
+            inputBox.textContent = text
+            inputBox.dispatchEvent(new InputEvent('input', { bubbles: true }))
+        }
+
+        console.log("AI Negotiator: Inserted text, now simulating Enter")
+
+        // Simulate Enter key to send
+        setTimeout(() => {
+            const enterEvent = new KeyboardEvent("keydown", {
+                bubbles: true,
+                cancelable: true,
+                key: "Enter",
+                code: "Enter",
+                keyCode: 13,
+                which: 13,
+                view: window
+            })
+            inputBox.dispatchEvent(enterEvent)
+        }, 100) // Small delay to ensure React state updates
+    } else {
+        console.error("AI Negotiator: Could not find chat input box")
+    }
+}
+
+// Listen for messages from the side panel
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.type === "INSERT_TEXT") {
+        insertText(request.text)
+    }
+})
 
 window.addEventListener("load", () => {
     // 1. Process initial messages
