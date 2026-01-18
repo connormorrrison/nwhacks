@@ -1,5 +1,14 @@
 This is a [Plasmo extension](https://docs.plasmo.com/) project bootstrapped with [`plasmo init`](https://www.npmjs.com/package/plasmo).
 
+## Installation
+
+1.  **Install dependencies:**
+    ```bash
+    pnpm install
+    # or if you don't have pnpm installed:
+    npm install
+    ```
+
 ## Getting Started
 
 First, run the development server:

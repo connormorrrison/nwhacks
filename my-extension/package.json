@@ -37,7 +37,7 @@
   },
   "manifest": {
     "host_permissions": [
-      "https://*/*"
+      "https://www.facebook.com/*"
     ],
     "permissions": [
       "sidePanel"
