@@ -1,4 +1,4 @@
-import { RefreshCw, Settings, ChevronDown } from "lucide-react"
+import { ChevronDown, RefreshCw, Settings, Wand2 } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
 
 import { Button } from "@/components/ui/button"
@@ -33,8 +33,10 @@ function SidePanel() {
     const [autoNegotiate, setAutoNegotiate] = useState(true) // Default to true for demo
     const [priceDeviation, setPriceDeviation] = useState(10)
     const [tone, setTone] = useState<"friendly" | "professional" | "firm">("friendly")
+    const [role, setRole] = useState<"buyer" | "seller">("buyer")
     const [address, setAddress] = useState("")
     const [authorizeAddress, setAuthorizeAddress] = useState(false)
+    const [draftReply, setDraftReply] = useState<string | null>(null)
 
     // Load settings from storage on mount
     useEffect(() => {
@@ -42,6 +44,7 @@ function SidePanel() {
             if (result.autoNegotiate !== undefined) setAutoNegotiate(result.autoNegotiate)
             if (result.priceDeviation !== undefined) setPriceDeviation(result.priceDeviation)
             if (result.tone !== undefined) setTone(result.tone)
+            if (result.role !== undefined) setRole(result.role)
             if (result.address !== undefined) setAddress(result.address)
             if (result.authorizeAddress !== undefined) setAuthorizeAddress(result.authorizeAddress)
         })
@@ -53,10 +56,11 @@ function SidePanel() {
             autoNegotiate,
             priceDeviation,
             tone,
+            role,
             address,
             authorizeAddress
         })
-    }, [autoNegotiate, priceDeviation, tone, address, authorizeAddress])
+    }, [autoNegotiate, priceDeviation, tone, role, address, authorizeAddress])
 
     const lastProcessedMessageRef = useRef<string | null>(null)
     const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -83,7 +87,7 @@ function SidePanel() {
 
     // Auto-negotiate trigger
     useEffect(() => {
-        if (messages.length > 0 && autoNegotiate) {
+        if (messages.length > 0) {
             const lastMsg = messages[messages.length - 1]
             const msgSignature = `${lastMsg.sender}-${lastMsg.text}-${messages.length}`
 
@@ -159,7 +163,7 @@ function SidePanel() {
 
             // We still use the same function but we'll take the best suggestion (or modify ai-client to return just one)
             // For now, let's assume we take the "Counter" or the first one if available.
-            const settings = { autoNegotiate, priceDeviation, tone, address, authorizeAddress }
+            const settings = { autoNegotiate, priceDeviation, tone, role, address, authorizeAddress }
             const results = await generateNegotiationSuggestions(messages, metadata, settings)
             remoteLog(`✅ AI Results: ${JSON.stringify(results)}`)
 
@@ -171,8 +175,13 @@ function SidePanel() {
                 remoteLog(`⏳ Waiting ${Math.round(delay / 1000)}s to mimic human...`)
                 await new Promise(resolve => setTimeout(resolve, delay))
 
-                remoteLog(`📤 Auto-sending reply: ${bestReply}`)
-                sendToPage(bestReply)
+                if (autoNegotiate) {
+                    remoteLog(`📤 Auto-sending reply: ${bestReply}`)
+                    sendToPage(bestReply)
+                } else {
+                    remoteLog(`📝 Drafting reply: ${bestReply}`)
+                    setDraftReply(bestReply)
+                }
             }
         } catch (error) {
             remoteLog(`❌ Failed to generate reply: ${error}`)
@@ -183,12 +192,22 @@ function SidePanel() {
     }
 
     const sendToPage = (text: string) => {
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs[0]?.id) {
-                chrome.tabs.sendMessage(tabs[0].id, {
-                    type: "INSERT_TEXT",
-                    text: text
+        // Target Facebook tabs specifically, not just the active tab
+        chrome.tabs.query({ url: "*://*.facebook.com/*" }, (tabs) => {
+            if (tabs.length > 0) {
+                // Send to all Facebook tabs to ensure the active chat receives it
+                tabs.forEach(tab => {
+                    if (tab.id) {
+                        chrome.tabs.sendMessage(tab.id, {
+                            type: "INSERT_TEXT",
+                            text: text
+                        }).catch((err) => {
+                            console.log("SidePanel: Failed to send to tab", tab.id, err)
+                        })
+                    }
                 })
+            } else {
+                console.warn("SidePanel: No Facebook tabs found")
             }
         })
     }
@@ -292,6 +311,26 @@ function SidePanel() {
                                                 Firm
                                             </DropdownMenuItem>
                                         </DropdownMenuContent>
+
+                                    </DropdownMenu>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="role">Role</Label>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="outline" className="w-full justify-between h-8 font-normal">
+                                                {role.charAt(0).toUpperCase() + role.slice(1)}
+                                                <ChevronDown className="ml-2 h-4 w-4 opacity-50" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent className="w-[240px]">
+                                            <DropdownMenuItem onClick={() => setRole("buyer")}>
+                                                Buyer
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => setRole("seller")}>
+                                                Seller
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
                                     </DropdownMenu>
                                 </div>
                                 <div className="space-y-3">
@@ -327,20 +366,22 @@ function SidePanel() {
 
 
             {/* Info Box - Moved here and added consistent mb-4 spacing */}
-            {(metadata.personName || metadata.itemInfo) && (
-                <div className="mb-4 space-y-1 bg-muted/50 p-3 rounded-lg border animate-in fade-in slide-in-from-top-2 duration-500">
-                    {metadata.personName && (
-                        <p className="text-sm text-muted-foreground">
-                            Negotiating with <span className="font-medium text-foreground">{metadata.personName}</span>
-                        </p>
-                    )}
-                    {metadata.itemInfo && (
-                        <p className="text-sm font-medium text-primary truncate max-w-[220px]">
-                            {metadata.itemInfo}
-                        </p>
-                    )}
-                </div>
-            )}
+            {
+                (metadata.personName || metadata.itemInfo) && (
+                    <div className="mb-4 space-y-1 bg-muted/50 p-3 rounded-lg border animate-in fade-in slide-in-from-top-2 duration-500">
+                        {metadata.personName && (
+                            <p className="text-sm text-muted-foreground">
+                                Negotiating with <span className="font-medium text-foreground">{metadata.personName}</span>
+                            </p>
+                        )}
+                        {metadata.itemInfo && (
+                            <p className="text-sm font-medium text-primary truncate max-w-[220px]">
+                                {metadata.itemInfo}
+                            </p>
+                        )}
+                    </div>
+                )
+            }
 
             {/* Message Display Area */}
             <div className="flex-1 overflow-y-auto mb-4 border rounded-md p-4 space-y-2">
@@ -363,6 +404,34 @@ function SidePanel() {
                             {msg.text}
                         </div>
                     ))
+                )}
+
+                {/* Draft Reply UI */}
+                {draftReply && (
+                    <div className="mb-4 mx-2 p-3 rounded-lg border border-dashed border-muted-foreground/50 bg-muted/30 animate-in fade-in slide-in-from-bottom-2">
+                        <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">Draft Reply</p>
+                        <p className="text-sm text-foreground mb-3">{draftReply}</p>
+                        <div className="flex gap-2">
+                            <Button
+                                size="sm"
+                                className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                                onClick={() => {
+                                    sendToPage(draftReply)
+                                    setDraftReply(null)
+                                }}
+                            >
+                                Confirm
+                            </Button>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1"
+                                onClick={() => setDraftReply(null)}
+                            >
+                                Discard
+                            </Button>
+                        </div>
+                    </div>
                 )}
 
                 {/* Loading State */}
@@ -388,6 +457,15 @@ function SidePanel() {
                     }}
                 />
                 <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={handleAutoReply}
+                    title="Generate AI Reply"
+                    disabled={isThinking}
+                >
+                    <Wand2 className="h-4 w-4" />
+                </Button>
+                <Button
                     onClick={() => {
                         sendToPage(input)
                         setInput("")
@@ -396,7 +474,7 @@ function SidePanel() {
                     Send
                 </Button>
             </div>
-        </div>
+        </div >
     )
 }
 

@@ -55,7 +55,7 @@ const safelySendMessage = (message: any) => {
 }
 
 // Function to process messages (Robust Sync)
-const processMessages = () => {
+const processMessages = (force = false) => {
     // Unified Selector: Target message bubbles directly
     // This works for both Marketplace (which contains these bubbles) and Regular chats
     const elements = document.querySelectorAll('div[dir="auto"].xyk4ms5, div[dir="auto"].x18lvrbx')
@@ -75,8 +75,8 @@ const processMessages = () => {
     const lastMsg = allMessages[allMessages.length - 1]
     const currentSignature = `${allMessages.length}-${lastMsg.text}-${lastMsg.sender}`
 
-    if (currentSignature !== lastMessageSignature) {
-        console.log(`AI Negotiator: Syncing ${allMessages.length} messages (Sig: ${currentSignature})`)
+    if (force || currentSignature !== lastMessageSignature) {
+        console.log(`AI Negotiator: Syncing ${allMessages.length} messages (Sig: ${currentSignature}, Force: ${force})`)
         safelySendMessage({
             type: "FULL_MESSAGE_HISTORY",
             messages: allMessages
@@ -117,41 +117,45 @@ window.addEventListener("load", () => {
 
 // Function to insert text into the chat input
 const insertText = (text: string) => {
-    // Try to find the input box
-    // Strategy 1: Look for the specific P tag user identified
-    let inputBox = document.querySelector('p.xat24cr.xdj266r') as HTMLElement
+    // Priority 1: Standard role="textbox" (Most robust for accessibility/React)
+    let inputBox = document.querySelector('[role="textbox"]') as HTMLElement
 
-    // Strategy 2: Look for the standard role="textbox" which is more robust
+    // Priority 2: Fallback to specific classes if textbox not found
     if (!inputBox) {
-        inputBox = document.querySelector('[role="textbox"]') as HTMLElement
+        inputBox = document.querySelector('p.xat24cr.xdj266r') as HTMLElement
     }
 
     if (inputBox) {
         console.log("AI Negotiator: Found input box:", inputBox)
 
-        // Focus the box
+        // 1. Focus and Clear
         inputBox.focus()
 
-        // If it's a contenteditable div/p, we might need to clear the <br> first
-        if (inputBox.innerHTML === "<br>") {
-            inputBox.innerHTML = ""
+        // Select all text to clear it safely
+        const range = document.createRange()
+        range.selectNodeContents(inputBox)
+        const sel = window.getSelection()
+        if (sel) {
+            sel.removeAllRanges()
+            sel.addRange(range)
         }
 
-        // Insert text
-        // For contenteditable, document.execCommand is often the most reliable way to trigger React events
+        // 2. Insert Text using execCommand (Best for contenteditable)
+        // This simulates a user typing/pasting and triggers internal React events
         const success = document.execCommand("insertText", false, text)
 
+        // 3. Fallback if execCommand failed
         if (!success) {
-            // Fallback: Direct manipulation + events
+            console.log("AI Negotiator: execCommand failed, trying direct manipulation")
             inputBox.textContent = text
-            inputBox.dispatchEvent(new InputEvent('input', { bubbles: true }))
+            inputBox.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }))
         }
 
         console.log("AI Negotiator: Inserted text, now simulating Enter")
 
-        // Simulate Enter key to send
+        // 4. Simulate Enter key to send (Robust sequence)
         setTimeout(() => {
-            const enterEvent = new KeyboardEvent("keydown", {
+            const eventOptions = {
                 bubbles: true,
                 cancelable: true,
                 key: "Enter",
@@ -159,9 +163,21 @@ const insertText = (text: string) => {
                 keyCode: 13,
                 which: 13,
                 view: window
-            })
-            inputBox.dispatchEvent(enterEvent)
-        }, 100) // Small delay to ensure React state updates
+            }
+
+            // Dispatch multiple events to ensure one catches
+            inputBox.dispatchEvent(new KeyboardEvent("keydown", eventOptions))
+            inputBox.dispatchEvent(new KeyboardEvent("keypress", eventOptions))
+            inputBox.dispatchEvent(new KeyboardEvent("keyup", eventOptions))
+
+            // Fallback: Try to find and click the "Send" button
+            // Facebook often has an aria-label="Send" or similar icon
+            const sendButton = document.querySelector('[aria-label="Send"], [aria-label="Press Enter to send"]') as HTMLElement
+            if (sendButton && sendButton !== inputBox) {
+                console.log("AI Negotiator: Clicking send button fallback")
+                sendButton.click()
+            }
+        }, 300) // Increased delay to ensure React state updates after text insertion
     } else {
         console.error("AI Negotiator: Could not find chat input box")
     }
@@ -173,7 +189,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         insertText(request.text)
     } else if (request.type === "GET_CHAT_HISTORY") {
         console.log("AI Negotiator: Received request for chat history")
-        processMessages()
+        processMessages(true)
         extractChatMetadata()
     } else if (request.type === "LOG") {
         console.log(`[SIDE_PANEL]: ${request.message}`)

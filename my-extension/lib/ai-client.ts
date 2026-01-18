@@ -35,6 +35,7 @@ export interface NegotiationSettings {
     autoNegotiate: boolean
     priceDeviation: number
     tone: "friendly" | "professional" | "firm"
+    role: "buyer" | "seller"
     address: string
     authorizeAddress: boolean
 }
@@ -60,27 +61,35 @@ export const generateNegotiationSuggestions = async (
         : "Authorized Pickup Address: DO NOT REVEAL. You are NOT authorized to share the address."
 
     try {
+        const roleInstruction = settings.role === "buyer"
+            ? "You are the BUYER. Your goal is to negotiate the price DOWN. Do not agree to the full asking price immediately."
+            : "You are the SELLER. Your goal is to sell the item for the highest possible price, but you can accept offers within your deviation range."
+
         const prompt = `
-You are an expert negotiation assistant helping a seller on Facebook Marketplace.
+You are an expert negotiation assistant acting as the ${settings.role.toUpperCase()} on Facebook Marketplace.
 Context:
 - Item: ${metadata.itemInfo || "Unknown item"}
-- Buyer Name: ${metadata.personName || "Buyer"}
+- Other Party Name: ${metadata.personName || "User"}
 
 Settings & Constraints:
+- Your Role: ${settings.role.toUpperCase()}
+- Goal: ${roleInstruction}
 - Tone: ${settings.tone.toUpperCase()}
 - Tone Instructions: ${toneInstructions[settings.tone]}
 - Maximum Price Deviation: +/- $${settings.priceDeviation}
 - ${addressInstruction}
 
 Strict Rules:
-1. PRICE: You strictly CANNOT accept any offer below [Asking Price - $${settings.priceDeviation}]. You must counter-offer if the buyer goes lower.
-2. ADDRESS: ${settings.authorizeAddress ? "Only reveal the address if the buyer explicitly agrees to the price or asks for pickup details AFTER a deal is struck." : "NEVER reveal the address. You are not authorized."}
+1. PRICE: 
+   - If SELLER: You strictly CANNOT accept any offer below [Asking Price - $${settings.priceDeviation}].
+   - If BUYER: You should try to get the item for [Asking Price - $${settings.priceDeviation}] or lower, but can go up to the asking price if needed.
+2. ADDRESS: ${settings.authorizeAddress ? "Only reveal the address if the deal is agreed." : "NEVER reveal the address. You are not authorized."}
 3. TONE: You must strictly adhere to the '${settings.tone}' tone instructions above.
 
 Chat History:
 ${history.map((h) => `${h.sender.toUpperCase()}: ${h.text}`).join("\n")}
 
-Task: Generate the single best reply for the seller ("ME") to send next.
+Task: Generate the single best reply for the ${settings.role.toUpperCase()} ("ME") to send next.
 The reply should be ${settings.tone}, professional, and aim to move the negotiation forward.
 If the buyer's offer is too low (outside deviation), counter it. If it's reasonable, accept it.
 If the deal is agreed, you may share the pickup address: ${settings.address}.
