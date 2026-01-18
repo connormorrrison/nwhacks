@@ -7,106 +7,207 @@ export const config: PlasmoCSConfig = {
 
 console.log("AI Negotiator: Content script loaded on Facebook")
 
-let lastHandledAt = 0
+// Function to extract text from a message row
+const extractMessageText = (row: Element): { text: string, sender: "me" | "them" } | null => {
+    // The user identified that text is in a div with dir="auto"
+    const textDiv = row.querySelector('div[dir="auto"]')
+    if (!textDiv) return null
 
-function getStorage<T>(key: string, fallback: T): Promise<T> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get([key], (res) => {
-      resolve((res?.[key] as T) ?? fallback)
+    const text = textDiv.textContent
+    if (!text) return null
+
+    // Class based identification
+    const className = textDiv.className
+    let sender: "me" | "them" = "them"
+
+    if (className.includes("xyk4ms5")) {
+        sender = "me"
+    } else if (className.includes("x18lvrbx")) {
+        sender = "them"
+    }
+
+    console.log(`AI Negotiator: Extracted: "${text.substring(0, 20)}...", Class: ${className}, Sender: ${sender}`)
+
+    return { text, sender }
+}
+
+// Function to process and send ALL messages (full history)
+const processAllMessages = () => {
+    const rows = document.querySelectorAll('div[role="row"]')
+    const messages: { text: string, sender: "me" | "them" }[] = []
+
+    rows.forEach((row) => {
+        const msg = extractMessageText(row)
+        if (msg) {
+            messages.push(msg)
+        }
     })
-  })
+
+    if (messages.length > 0) {
+        console.log(`AI Negotiator: Sending ${messages.length} messages to side panel`)
+        try {
+            chrome.runtime.sendMessage({
+                type: "FULL_MESSAGE_HISTORY", // Changed type to indicate full history
+                messages: messages
+            }).catch(() => {
+                // Side panel might be closed, ignore error
+            })
+        } catch (e) {
+            // Extension context invalidated (script is orphaned)
+            console.log("AI Negotiator: Connection lost (please refresh page)")
+        }
+    }
 }
 
-function sendMessage<T>(payload: unknown): Promise<T> {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(payload, (res) => resolve(res as T))
-  })
+// Function to insert text into the chat input
+const insertText = (text: string) => {
+    // Try to find the input box
+    // Strategy 1: Look for the specific P tag user identified
+    let inputBox = document.querySelector('p.xat24cr.xdj266r') as HTMLElement
+
+    // Strategy 2: Look for the standard role="textbox" which is more robust
+    if (!inputBox) {
+        inputBox = document.querySelector('[role="textbox"]') as HTMLElement
+    }
+
+    if (inputBox) {
+        console.log("AI Negotiator: Found input box:", inputBox)
+
+        // Focus the box
+        inputBox.focus()
+
+        // If it's a contenteditable div/p, we might need to clear the <br> first
+        if (inputBox.innerHTML === "<br>") {
+            inputBox.innerHTML = ""
+        }
+
+        // Insert text
+        // For contenteditable, document.execCommand is often the most reliable way to trigger React events
+        const success = document.execCommand("insertText", false, text)
+
+        if (!success) {
+            // Fallback: Direct manipulation + events
+            inputBox.textContent = text
+            inputBox.dispatchEvent(new InputEvent('input', { bubbles: true }))
+        }
+
+        console.log("AI Negotiator: Inserted text, now simulating Enter")
+
+        // Simulate Enter key to send
+        setTimeout(() => {
+            const enterEvent = new KeyboardEvent("keydown", {
+                bubbles: true,
+                cancelable: true,
+                key: "Enter",
+                code: "Enter",
+                keyCode: 13,
+                which: 13,
+                view: window
+            })
+            inputBox.dispatchEvent(enterEvent)
+        }, 100) // Small delay to ensure React state updates
+    } else {
+        console.error("AI Negotiator: Could not find chat input box")
+    }
 }
 
-function showToast(msg: string) {
-  const t = document.createElement("div")
-  t.textContent = msg
-  t.style.position = "fixed"
-  t.style.left = "50%"
-  t.style.transform = "translateX(-50%)"
-  t.style.bottom = "24px"
-  t.style.background = "#111"
-  t.style.color = "#fff"
-  t.style.padding = "8px 12px"
-  t.style.borderRadius = "6px"
-  t.style.zIndex = "2147483647"
-  document.body.appendChild(t)
-  setTimeout(() => t.remove(), 2000)
-}
+// Listen for messages from the side panel
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.type === "INSERT_TEXT") {
+        insertText(request.text)
+    }
+})
 
-function findMessageText(target: HTMLElement) {
-  if (target.closest('textarea, input, [contenteditable="true"]')) return ""
-  const candidate = target.closest(
-    '[role="row"], [role="article"], div[dir="auto"]'
-  ) as HTMLElement | null
-  const text = (candidate?.innerText || target.innerText || "").trim()
-  if (!text || text.length < 2) return ""
-  if (text.length > 800) return ""
-  return text
-}
+// Function to extract chat metadata (Item info and Person name)
+const extractChatMetadata = () => {
+    console.log("AI Negotiator: --- Metadata Extraction Start ---")
 
-function setComposerText(text: string) {
-  const editable =
-    (document.querySelector(
-      '[contenteditable="true"][role="textbox"]'
-    ) as HTMLElement | null) ||
-    (document.querySelector('[contenteditable="true"]') as HTMLElement | null)
+    // 1. Try to find Person Name (H5 is usually reliable for the header)
+    const h5s = document.querySelectorAll('h5')
+    let personName: string | null = null
+    if (h5s.length > 0) {
+        personName = h5s[0].textContent
+    }
 
-  const input =
-    (document.querySelector("textarea") as HTMLTextAreaElement | null) ||
-    (document.querySelector("input[type='text']") as HTMLInputElement | null)
+    // 2. Try to find Item Info
+    let itemInfo: string | null = null
 
-  if (editable) {
-    editable.focus()
-    document.execCommand("insertText", false, text)
-    return true
-  }
-  if (input) {
-    input.focus()
-    input.value = text
-    input.dispatchEvent(new Event("input", { bubbles: true }))
-    return true
-  }
-  return false
+    // Strategy A: Find all divs with the class user provided and filter
+    const candidateDivs = document.querySelectorAll('div.xu06os2.x1ok221b')
+    console.log(`AI Negotiator: Found ${candidateDivs.length} candidate divs`)
+
+    candidateDivs.forEach((div, i) => {
+        const text = div.textContent
+        console.log(`AI Negotiator: Candidate [${i}]:`, text)
+        if (text && text !== "Marketplace" && (text.includes("CA$") || text.includes("$") || text.includes("-"))) {
+            itemInfo = text
+        }
+    })
+
+    // Strategy B: Look for "Marketplace" text and get the next sibling
+    if (!itemInfo) {
+        const marketplaceSpan = Array.from(document.querySelectorAll('span')).find(s => s.textContent === "Marketplace")
+        if (marketplaceSpan) {
+            // Go up to the container div
+            const container = marketplaceSpan.closest('div.xu06os2.x1ok221b')
+            if (container && container.nextElementSibling) {
+                itemInfo = container.nextElementSibling.textContent
+                console.log("AI Negotiator: Found item via Marketplace sibling:", itemInfo)
+            }
+        }
+    }
+
+    // Strategy C: Brute force search for "CA$" or "$" (Fallback)
+    if (!itemInfo) {
+        const allElements = document.querySelectorAll('*')
+        for (const el of allElements) {
+            // Look for leaf nodes (no children) with text
+            if (el.children.length === 0 && el.textContent) {
+                const text = el.textContent
+                if ((text.includes("CA$") || text.includes("$")) && /\d/.test(text) && text.length < 100) {
+                    console.log("AI Negotiator: Found potential item via brute force:", el)
+                    itemInfo = text
+                    break // Stop at first match
+                }
+            }
+        }
+    }
+
+    console.log("AI Negotiator: Final Decision -> Name:", personName, "Item:", itemInfo)
+
+    if (itemInfo || personName) {
+        try {
+            chrome.runtime.sendMessage({
+                type: "CHAT_METADATA",
+                metadata: { itemInfo, personName }
+            }).catch(() => { })
+        } catch (e) {
+            // Ignore context invalidation
+        }
+    }
+    console.log("AI Negotiator: --- Metadata Extraction End ---")
 }
 
 window.addEventListener("load", () => {
-  document.addEventListener("click", async (event) => {
-    const now = Date.now()
-    if (now - lastHandledAt < 1000) return
+    // 1. Process initial messages
+    setTimeout(() => {
+        processAllMessages()
+        extractChatMetadata()
+    }, 2000)
 
-    const target = event.target as HTMLElement
-    const message = findMessageText(target)
-    if (!message) return
-
-    const autoNegotiate = await getStorage("neg_auto", false)
-    if (!autoNegotiate) return
-
-    lastHandledAt = now
-    const response = await sendMessage<{
-      ok: boolean
-      text?: string
-      error?: string
-    }>({
-      type: "generate-reply",
-      buyerMessage: message
+    // 2. Set up MutationObserver to watch for changes
+    // We debounce the update to avoid sending too many messages during rapid loading
+    let timeout: NodeJS.Timeout
+    const observer = new MutationObserver(() => {
+        clearTimeout(timeout)
+        timeout = setTimeout(() => {
+            processAllMessages()
+            extractChatMetadata()
+        }, 500)
     })
 
-    if (!response?.ok || !response.text) {
-      showToast(response?.error || "LLM failed")
-      return
-    }
-
-    const injected = setComposerText(response.text)
-    if (!injected) {
-      showToast("Reply ready (couldn't find chat input)")
-      return
-    }
-    showToast("Reply drafted")
-  })
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    })
 })

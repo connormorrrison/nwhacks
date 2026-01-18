@@ -1,5 +1,16 @@
 import { Settings } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useState, useEffect } from "react"
+
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger
+} from "@/components/ui/popover"
+import { Switch } from "@/components/ui/switch"
+import { cn } from "@/lib/utils"
 
 import "./style.css"
 
@@ -29,59 +40,45 @@ const Switch = ({ checked, onCheckedChange }: any) => (
 )
 
 function SidePanel() {
-    const [autoNegotiate, setAutoNegotiate] = useState(false)
-    const [listing, setListing] = useState({
-        id: "",
-        title: "",
-        targetPrice: "",
-        priceReason: "",
-        strategy: "friendly"
-    })
-    const [status, setStatus] = useState("")
+    const [messages, setMessages] = useState<{ text: string, sender: "me" | "them" }[]>([])
+    const [metadata, setMetadata] = useState<{ itemInfo: string | null, personName: string | null }>({ itemInfo: null, personName: null })
 
+    // Listen for messages from the content script
     useEffect(() => {
-        chrome.storage.local.get(["active_listing", "neg_auto"], (res) => {
-            if (res.active_listing) {
-                setListing({
-                    id: res.active_listing.id || "",
-                    title: res.active_listing.title || "",
-                    targetPrice: res.active_listing.targetPrice || "",
-                    priceReason: res.active_listing.priceReason || "",
-                    strategy: res.active_listing.strategy || "friendly"
-                })
+        const messageListener = (request, sender, sendResponse) => {
+            if (request.type === "FULL_MESSAGE_HISTORY") {
+                console.log("AI Negotiator: Received full history:", request.messages)
+                setMessages(request.messages)
             }
-            setAutoNegotiate(!!res.neg_auto)
-        })
+            if (request.type === "CHAT_METADATA") {
+                setMetadata(request.metadata)
+            }
+        }
+        chrome.runtime.onMessage.addListener(messageListener)
+        return () => chrome.runtime.onMessage.removeListener(messageListener)
     }, [])
-
-    const saveListing = () => {
-        if (!listing.title.trim()) {
-            setStatus("Add a listing title to save.")
-            return
-        }
-        const withId = {
-            ...listing,
-            id: listing.id || `lst_${Date.now()}`
-        }
-        chrome.storage.local.set(
-            { active_listing: withId },
-            () => {
-                setListing(withId)
-                setStatus("Listing saved.")
-                setTimeout(() => setStatus(""), 2000)
-            }
-        )
-    }
-
-    const onToggleAuto = (checked: boolean) => {
-        setAutoNegotiate(checked)
-        chrome.storage.local.set({ neg_auto: checked })
-    }
 
     return (
         <div className="flex flex-col h-screen w-screen bg-background text-foreground p-4 font-sans">
-            <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-normal">AI Negotiator</h2>
+            <div className="flex justify-between items-start mb-6">
+                <div className="space-y-4">
+                    <h2 className="text-2xl font-normal tracking-tight">AI Negotiator</h2>
+
+                    {(metadata.personName || metadata.itemInfo) && (
+                        <div className="space-y-1 bg-muted/50 p-3 rounded-lg border">
+                            {metadata.personName && (
+                                <p className="text-sm text-muted-foreground">
+                                    Negotiating with <span className="font-medium text-foreground">{metadata.personName}</span>
+                                </p>
+                            )}
+                            {metadata.itemInfo && (
+                                <p className="text-sm font-medium text-primary truncate max-w-[220px]">
+                                    {metadata.itemInfo}
+                                </p>
+                            )}
+                        </div>
+                    )}
+                </div>
                 <Popover>
                     <PopoverTrigger asChild>
                         <Button variant="outline" size="icon">
@@ -110,59 +107,67 @@ function SidePanel() {
                     </PopoverContent>
                 </Popover>
             </div>
-            <div className="flex-1 space-y-4">
-                <div className="space-y-2">
-                    <Label>Listing title</Label>
-                    <Input
-                        value={listing.title}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                            setListing({ ...listing, title: e.target.value })
-                        }
-                        placeholder="e.g. Mid-century desk"
-                    />
-                </div>
 
-                <div className="space-y-2">
-                    <Label>Target price (minimum)</Label>
-                    <Input
-                        value={listing.targetPrice}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                            setListing({ ...listing, targetPrice: e.target.value })
-                        }
-                        placeholder="$120"
-                    />
-                </div>
+            {/* Message Display Area */}
+            <div className="flex-1 overflow-y-auto mb-4 border rounded-md p-2 space-y-2">
+                {messages.length === 0 ? (
+                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                        Select an item to negotiate
+                    </div>
+                ) : (
+                    messages.map((msg, index) => (
+                        <div
+                            key={index}
+                            className={cn(
+                                "p-2 rounded-lg text-sm max-w-[80%]",
+                                msg.sender === "me"
+                                    ? "bg-primary text-primary-foreground ml-auto"
+                                    : "bg-muted text-foreground mr-auto"
+                            )}
+                        >
+                            {msg.text}
+                        </div>
+                    ))
+                )}
+            </div>
 
-                <div className="space-y-2">
-                    <Label>Why this price</Label>
-                    <textarea
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        rows={4}
-                        value={listing.priceReason}
-                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                            setListing({ ...listing, priceReason: e.target.value })
+            {/* Test Input Area */}
+            <div className="flex gap-2">
+                <Input
+                    placeholder="Type a message..."
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            const target = e.target as HTMLInputElement
+                            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                                if (tabs[0]?.id) {
+                                    chrome.tabs.sendMessage(tabs[0].id, {
+                                        type: "INSERT_TEXT",
+                                        text: target.value
+                                    })
+                                    target.value = ""
+                                }
+                            })
                         }
-                        placeholder="Condition, demand, original price, etc."
-                    />
-                </div>
-
-                <div className="space-y-2">
-                    <Label>Strategy</Label>
-                    <select
-                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        value={listing.strategy}
-                        onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
-                            setListing({ ...listing, strategy: e.target.value })
+                    }}
+                />
+                <Button
+                    onClick={() => {
+                        const input = document.querySelector('input') as HTMLInputElement
+                        if (input && input.value) {
+                            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                                if (tabs[0]?.id) {
+                                    chrome.tabs.sendMessage(tabs[0].id, {
+                                        type: "INSERT_TEXT",
+                                        text: input.value
+                                    })
+                                    input.value = ""
+                                }
+                            })
                         }
-                    >
-                        <option value="friendly">Friendly</option>
-                        <option value="firm">Firm</option>
-                        <option value="flexible">Flexible</option>
-                    </select>
-                </div>
-
-                <Button onClick={saveListing}>Save listing</Button>
-                {status && <div className="text-sm text-muted-foreground">{status}</div>}
+                    }}
+                >
+                    Send
+                </Button>
             </div>
         </div>
     )
