@@ -9,10 +9,25 @@ import {
     PopoverTrigger
 } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
+import { cn } from "@/lib/utils"
 
 import "./style.css"
 
 function SidePanel() {
+    const [messages, setMessages] = useState<{ text: string, sender: "me" | "them" }[]>([])
+
+    // Listen for messages from the content script
+    useState(() => {
+        const messageListener = (request, sender, sendResponse) => {
+            if (request.type === "FULL_MESSAGE_HISTORY") {
+                console.log("AI Negotiator: Received full history:", request.messages)
+                setMessages(request.messages)
+            }
+        }
+        chrome.runtime.onMessage.addListener(messageListener)
+        return () => chrome.runtime.onMessage.removeListener(messageListener)
+    })
+
     return (
         <div className="flex flex-col h-screen w-screen bg-background text-foreground p-4 font-sans">
             <div className="flex justify-between items-center mb-6">
@@ -49,8 +64,28 @@ function SidePanel() {
                     </PopoverContent>
                 </Popover>
             </div>
-            <div className="flex-1 flex items-center justify-center text-muted-foreground">
-                Select an item to negotiate
+
+            {/* Message Display Area */}
+            <div className="flex-1 overflow-y-auto mb-4 border rounded-md p-2 space-y-2">
+                {messages.length === 0 ? (
+                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                        Select an item to negotiate
+                    </div>
+                ) : (
+                    messages.map((msg, index) => (
+                        <div
+                            key={index}
+                            className={cn(
+                                "p-2 rounded-lg text-sm max-w-[80%]",
+                                msg.sender === "me"
+                                    ? "bg-primary text-primary-foreground ml-auto"
+                                    : "bg-muted text-foreground mr-auto"
+                            )}
+                        >
+                            {msg.text}
+                        </div>
+                    ))
+                )}
             </div>
         </div>
     )

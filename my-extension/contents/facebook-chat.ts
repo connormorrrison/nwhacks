@@ -7,24 +7,65 @@ export const config: PlasmoCSConfig = {
 
 console.log("AI Negotiator: Content script loaded on Facebook")
 
-// Placeholder for message extraction logic
+// Function to extract text from a message row
+const extractMessageText = (row: Element): { text: string, sender: "me" | "them" } | null => {
+    // The user identified that text is in a div with dir="auto"
+    const textDiv = row.querySelector('div[dir="auto"]')
+    if (!textDiv) return null
+
+    const text = textDiv.textContent
+    if (!text) return null
+
+    // Class based identification
+    const className = textDiv.className
+    let sender: "me" | "them" = "them"
+
+    if (className.includes("xyk4ms5")) {
+        sender = "me"
+    } else if (className.includes("x18lvrbx")) {
+        sender = "them"
+    }
+
+    console.log(`AI Negotiator: Extracted: "${text.substring(0, 20)}...", Class: ${className}, Sender: ${sender}`)
+
+    return { text, sender }
+}
+
+// Function to process and send ALL messages (full history)
+const processAllMessages = () => {
+    const rows = document.querySelectorAll('div[role="row"]')
+    const messages: { text: string, sender: "me" | "them" }[] = []
+
+    rows.forEach((row) => {
+        const msg = extractMessageText(row)
+        if (msg) {
+            messages.push(msg)
+        }
+    })
+
+    if (messages.length > 0) {
+        console.log(`AI Negotiator: Sending ${messages.length} messages to side panel`)
+        chrome.runtime.sendMessage({
+            type: "FULL_MESSAGE_HISTORY", // Changed type to indicate full history
+            messages: messages
+        })
+    }
+}
+
 window.addEventListener("load", () => {
-    console.log("AI Negotiator: Window loaded")
+    // 1. Process initial messages
+    setTimeout(processAllMessages, 2000)
 
-    // Helper to identify selectors: Log clicked element details
-    document.addEventListener("click", (event) => {
-        const target = event.target as HTMLElement
-        console.log("AI Negotiator: Clicked Element:", target)
-        console.log("AI Negotiator: Clicked OuterHTML:", target.outerHTML)
-        if (target.parentElement) {
-            console.log("AI Negotiator: Parent OuterHTML:", target.parentElement.outerHTML)
-        }
+    // 2. Set up MutationObserver to watch for changes
+    // We debounce the update to avoid sending too many messages during rapid loading
+    let timeout: NodeJS.Timeout
+    const observer = new MutationObserver(() => {
+        clearTimeout(timeout)
+        timeout = setTimeout(processAllMessages, 500)
+    })
 
-        // Try to find the closest common message container candidates
-        const messageCandidate = target.closest('[role="row"], [role="article"], div[class*="message"], div[class*="text"]')
-        if (messageCandidate) {
-            console.log("AI Negotiator: Potential Message Container:", messageCandidate)
-            console.log("AI Negotiator: Potential Message HTML:", messageCandidate.outerHTML)
-        }
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
     })
 })
