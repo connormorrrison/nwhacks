@@ -35,18 +35,23 @@ function SidePanel() {
 
     return (
         <div className="flex flex-col h-screen w-screen bg-background text-foreground p-4 font-sans">
-            <div className="flex justify-between items-center mb-4">
-                <div>
-                    <h2 className="text-2xl font-normal">AI Negotiator</h2>
-                    {metadata.personName && (
-                        <p className="text-sm text-muted-foreground">
-                            Negotiating with <span className="font-medium text-foreground">{metadata.personName}</span>
-                        </p>
-                    )}
-                    {metadata.itemInfo && (
-                        <p className="text-xs text-muted-foreground truncate max-w-[200px]">
-                            {metadata.itemInfo}
-                        </p>
+            <div className="flex justify-between items-start mb-6">
+                <div className="space-y-4">
+                    <h2 className="text-2xl font-normal tracking-tight">AI Negotiator</h2>
+
+                    {(metadata.personName || metadata.itemInfo) && (
+                        <div className="space-y-1 bg-muted/50 p-3 rounded-lg border">
+                            {metadata.personName && (
+                                <p className="text-sm text-muted-foreground">
+                                    Negotiating with <span className="font-medium text-foreground">{metadata.personName}</span>
+                                </p>
+                            )}
+                            {metadata.itemInfo && (
+                                <p className="text-sm font-medium text-primary truncate max-w-[220px]">
+                                    {metadata.itemInfo}
+                                </p>
+                            )}
+                        </div>
                     )}
                 </div>
                 <Popover>
