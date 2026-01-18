@@ -19,7 +19,13 @@
     "moduleResolution": "bundler",
     "types": [
       "chrome"
-    ]
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    }
   },
   "include": [
     ".plasmo/index.d.ts",
