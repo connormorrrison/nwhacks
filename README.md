@@ -69,3 +69,30 @@ Next Steps (you asked for these later)
 - Build the dashboard UI and wire storage to persist negotiation sessions.
 
 If you want, I can start implementing the first step: wire the listing-creation prompts and persist the listing metadata. Tell me which step to start next.
+
+Team Assignments
+----------------
+Below is a suggested division of the remaining work between four team members. Assign names as you prefer.
+
+- **Member 1 — Frontend (Listing & Chat UI)**
+   - Implement listing-creation UI that collects `targetPrice` and `priceReason` and injects it into the marketplace listing flow (`src/content/fb-marketplace-injector.js`, `src/content/content.js`).
+   - Build the per-thread modal that prompts which listing a buyer message belongs to and an opt-in toggle for auto-negotiate.
+   - Acceptance: inputs visible and values emitted to storage API; modal appears on message click.
+
+- **Member 2 — Storage & Options**
+   - Implement listing/session persistence in `utils/storage-helper.js` (CRUD APIs for listings and negotiation sessions).
+   - Build the options UI (`src/options/options.html` & `.js`) to view/edit listings, configure provider keys, and edit prompt templates.
+   - Acceptance: listings persist across reloads; options UI reads/writes storage.
+
+- **Member 3 — Negotiation Engine & LLM**
+   - Implement `src/api/negotiation-engine.js` (session state machine, counteroffer rules, timers, status transitions).
+   - Implement `src/api/ai-client.js` to call the chosen LLM provider, apply prompt templates (`assets/prompts/negotiation-prompts.json`), and handle retries/rate-limits.
+   - Acceptance: negotiation engine can produce a candidate reply from the LLM given a session context and obey `targetPrice` constraints.
+
+- **Member 4 — Dashboard, Background & QA**
+   - Implement the popup/dashboard (`src/popup/popup.html`, `src/popup/popup.js`) showing negotiation cards (buyer, listing, asking, target, recent message, status) with pause/stop controls.
+   - Wire `src/background/service-worker.js` for cross-tab messaging, scheduled follow-ups, and background sending when allowed.
+   - Update `manifest.json` and add integration tests and a privacy checklist for QA.
+   - Acceptance: dashboard lists active sessions; background worker coordinates auto-sends and updates session state.
+
+Small tasks and cross-cutting concerns (assign to any member): prompt templates and tuning (`assets/prompts/negotiation-prompts.json`), message parsing improvements (`utils/message-parser.js`, `utils/price-analyzer.js`), and end-to-end integration testing.
