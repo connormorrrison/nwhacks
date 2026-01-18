@@ -1,8 +1,8 @@
 import type { PlasmoCSConfig } from "plasmo"
 
 export const config: PlasmoCSConfig = {
-    matches: ["*://*.facebook.com/*"],
-    all_frames: true
+  matches: ["*://*.facebook.com/*"],
+  all_frames: true
 }
 
 console.log("AI Negotiator: Content script loaded on Facebook")

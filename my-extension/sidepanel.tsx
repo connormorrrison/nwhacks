@@ -14,6 +14,31 @@ import { cn } from "@/lib/utils"
 
 import "./style.css"
 
+// Simple button component
+const Button = ({ children, onClick, className }: any) => (
+  <button onClick={onClick} className={className} style={{ padding: "8px 12px", cursor: "pointer" }}>
+    {children}
+  </button>
+)
+
+// Simple input component
+const Input = ({ value, onChange, placeholder, className }: any) => (
+  <input value={value} onChange={onChange} placeholder={placeholder} className={className} style={{ padding: "6px", width: "100%" }} />
+)
+
+// Simple label component
+const Label = ({ children }: any) => <label style={{ display: "block", marginBottom: "4px", fontWeight: "600" }}>{children}</label>
+
+// Simple popover components
+const Popover = ({ children }: any) => <div>{children}</div>
+const PopoverTrigger = ({ children }: any) => <>{children}</>
+const PopoverContent = ({ children }: any) => <div style={{ border: "1px solid #ccc", padding: "8px", marginTop: "4px" }}>{children}</div>
+
+// Simple switch component
+const Switch = ({ checked, onCheckedChange }: any) => (
+  <input type="checkbox" checked={checked} onChange={(e: any) => onCheckedChange(e.target.checked)} style={{ cursor: "pointer" }} />
+)
+
 function SidePanel() {
     const [messages, setMessages] = useState<{ text: string, sender: "me" | "them" }[]>([])
     const [metadata, setMetadata] = useState<{ itemInfo: string | null, personName: string | null }>({ itemInfo: null, personName: null })
@@ -71,15 +96,11 @@ function SidePanel() {
                             <div className="grid gap-4">
                                 <div className="flex items-center justify-between space-x-2">
                                     <Label htmlFor="auto-negotiate">Auto-negotiate</Label>
-                                    <Switch id="auto-negotiate" />
-                                </div>
-                                <div className="flex items-center justify-between space-x-2">
-                                    <Label htmlFor="aggressive">Be aggressive</Label>
-                                    <Switch id="aggressive" />
-                                </div>
-                                <div className="flex items-center justify-between space-x-2">
-                                    <Label htmlFor="background-mode">Background mode</Label>
-                                    <Switch id="background-mode" />
+                                    <Switch
+                                        id="auto-negotiate"
+                                        checked={autoNegotiate}
+                                        onCheckedChange={onToggleAuto}
+                                    />
                                 </div>
                             </div>
                         </div>
