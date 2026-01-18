@@ -37,6 +37,7 @@ function SidePanel() {
     const [address, setAddress] = useState("")
     const [authorizeAddress, setAuthorizeAddress] = useState(false)
     const [draftReply, setDraftReply] = useState<string | null>(null)
+    const [lastError, setLastError] = useState<string | null>(null)
 
     // Load settings from storage on mount
     useEffect(() => {
@@ -86,6 +87,7 @@ function SidePanel() {
     }, [isThinking])
 
     // Auto-negotiate trigger
+    // Auto-negotiate trigger
     useEffect(() => {
         if (messages.length > 0) {
             const lastMsg = messages[messages.length - 1]
@@ -93,15 +95,26 @@ function SidePanel() {
 
             console.log("SidePanel: Checking auto-trigger. Last sender:", lastMsg.sender, "Signature:", msgSignature)
 
-            if (lastMsg.sender === "them" && lastProcessedMessageRef.current !== msgSignature) {
+            // Trigger if:
+            // 1. Last message is from "them"
+            // 2. We haven't processed this exact message yet
+            // 3. We aren't currently thinking
+            // 4. We don't already have a draft waiting (unless we want to overwrite, but safer not to)
+            if (lastMsg.sender === "them" && lastProcessedMessageRef.current !== msgSignature && !isThinking && !draftReply) {
                 console.log("SidePanel: Auto-triggering AI for new message...")
                 lastProcessedMessageRef.current = msgSignature
+                setLastError(null) // Clear previous errors
                 handleAutoReply()
             } else {
-                console.log("SidePanel: Skipping auto-trigger. Already processed or sender is me.")
+                console.log("SidePanel: Skipping auto-trigger.", {
+                    isThem: lastMsg.sender === "them",
+                    isNew: lastProcessedMessageRef.current !== msgSignature,
+                    notThinking: !isThinking,
+                    noDraft: !draftReply
+                })
             }
         }
-    }, [messages, autoNegotiate])
+    }, [messages, isThinking, draftReply])
 
     // Listen for messages from the content script and request initial history
     useEffect(() => {
@@ -182,10 +195,13 @@ function SidePanel() {
                     remoteLog(`📝 Drafting reply: ${bestReply}`)
                     setDraftReply(bestReply)
                 }
+            } else {
+                setLastError("AI returned no suggestions")
             }
-        } catch (error) {
+        } catch (error: any) {
             remoteLog(`❌ Failed to generate reply: ${error}`)
             console.error("SidePanel: Failed to generate reply:", error)
+            setLastError(error.message || "Unknown error")
         } finally {
             setIsThinking(false)
         }
@@ -409,7 +425,7 @@ function SidePanel() {
                 {/* Draft Reply UI */}
                 {draftReply && (
                     <div className="mb-4 mx-2 p-3 rounded-lg border border-dashed border-muted-foreground/50 bg-muted/30 animate-in fade-in slide-in-from-bottom-2">
-                        <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">Draft Reply</p>
+                        <p className="text-sm text-muted-foreground mb-2">Draft Reply</p>
                         <p className="text-sm text-foreground mb-3">{draftReply}</p>
                         <div className="flex gap-2">
                             <Button
@@ -426,9 +442,12 @@ function SidePanel() {
                                 size="sm"
                                 variant="outline"
                                 className="flex-1"
-                                onClick={() => setDraftReply(null)}
+                                onClick={() => {
+                                    setDraftReply(null)
+                                    handleAutoReply()
+                                }}
                             >
-                                Discard
+                                Rewrite
                             </Button>
                         </div>
                     </div>
@@ -443,33 +462,45 @@ function SidePanel() {
                 <div ref={messagesEndRef} />
             </div>
 
+            {/* Status / Error Line - Removed as per request */}
+            {lastError && (
+                <div className="mb-2 px-1 text-xs text-red-500 font-medium truncate" title={lastError}>
+                    Error: {lastError}
+                </div>
+            )}
+
             {/* Input Area */}
-            <div className="flex gap-4">
-                <Input
-                    placeholder="Type a message..."
-                    value={input}
-                    onChange={(e: any) => setInput(e.target.value)}
-                    onKeyDown={(e: any) => {
-                        if (e.key === "Enter") {
-                            sendToPage(input)
-                            setInput("")
-                        }
-                    }}
-                />
-                <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={handleAutoReply}
-                    title="Generate AI Reply"
-                    disabled={isThinking}
-                >
-                    <Wand2 className="h-4 w-4" />
-                </Button>
+            <div className="flex gap-2 items-center">
+                <div className="relative flex-1">
+                    <Input
+                        placeholder="Type a message..."
+                        value={input}
+                        onChange={(e: any) => setInput(e.target.value)}
+                        onKeyDown={(e: any) => {
+                            if (e.key === "Enter") {
+                                sendToPage(input)
+                                setInput("")
+                            }
+                        }}
+                        className="pr-10 rounded-full"
+                    />
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full hover:bg-muted"
+                        onClick={handleAutoReply}
+                        title="Generate AI Reply"
+                        disabled={isThinking}
+                    >
+                        <Wand2 className="h-4 w-4" />
+                    </Button>
+                </div>
                 <Button
                     onClick={() => {
                         sendToPage(input)
                         setInput("")
                     }}
+                    className="rounded-full"
                 >
                     Send
                 </Button>

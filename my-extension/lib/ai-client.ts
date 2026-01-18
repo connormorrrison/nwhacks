@@ -99,10 +99,11 @@ Output ONLY a JSON array with this structure containing ONE element:
   { "label": "Reply", "text": "..." }
 ]
 Do not include markdown formatting like \`\`\`json. Just the raw JSON.
+Do NOT use emojis in the reply.
 `
         console.log("AI Client: Sending prompt to Gemini...")
         const response = await ai.models.generateContent({
-            model: "gemini-flash-latest",
+            model: "gemini-2.5-flash",
             contents: prompt,
             config: {
                 responseMimeType: "application/json"
@@ -115,22 +116,31 @@ Do not include markdown formatting like \`\`\`json. Just the raw JSON.
         let text = ""
         if (response.candidates && response.candidates[0]?.content?.parts?.[0]?.text) {
             text = response.candidates[0].content.parts[0].text
-        } else if (typeof response.text === 'function') {
-            text = response.text()
-        } else if (response.text) {
-            text = response.text
+        } else if (typeof (response as any).text === 'function') {
+            text = (response as any).text()
+        } else if ((response as any).text) {
+            text = (response as any).text
         }
 
         console.log("AI Client: Raw response text:", text)
 
         // Clean up if model adds markdown despite instructions
-        const cleanText = text.replace(/```json/g, "").replace(/```/g, "").trim()
+        let parsed: Suggestion[] = []
+        try {
+            const cleanText = text.replace(/```json/g, "").replace(/```/g, "").trim()
+            parsed = JSON.parse(cleanText) as Suggestion[]
+        } catch (e) {
+            console.warn("AI Client: JSON parse failed, attempting fallback...", e)
+            // Fallback: If it's just text, wrap it
+            if (text && !text.trim().startsWith("[")) {
+                parsed = [{ label: "Reply", text: text.trim() }]
+            }
+        }
 
-        const parsed = JSON.parse(cleanText) as Suggestion[]
         console.log("AI Client: Parsed suggestions:", parsed)
         return parsed
     } catch (error) {
         console.error("AI Client: Error generating suggestions:", error)
-        return []
+        throw error // Propagate error to UI
     }
 }
